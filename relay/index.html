@@ -396,18 +396,13 @@ function setupDC(ch) {
   };
 }
 
-// Wait for ICE gathering to complete (with timeout fallback)
-function waitForICE(peer) {
+// Collect ICE candidates until null (complete) or 5s timeout
+function gatherCandidates(peer) {
   return new Promise(function(resolve) {
-    if (peer.iceGatheringState === 'complete') { resolve(); return; }
-    var done = function() {
-      if (peer.iceGatheringState === 'complete') {
-        peer.removeEventListener('icegatheringstatechange', done);
-        resolve();
-      }
+    var tid = setTimeout(function(){ resolve(peer.localDescription); }, 5000);
+    peer.onicecandidate = function(e) {
+      if (e.candidate === null) { clearTimeout(tid); resolve(peer.localDescription); }
     };
-    peer.addEventListener('icegatheringstatechange', done);
-    setTimeout(resolve, 3500);
   });
 }
 
@@ -425,11 +420,9 @@ async function startHost() {
     var ch = pc.createDataChannel('relay', { ordered: true });
     setupDC(ch);
 
-    var offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitForICE(pc);
-
-    var encoded = toB64(JSON.stringify(pc.localDescription));
+    await pc.setLocalDescription(await pc.createOffer());
+    var finalDesc = await gatherCandidates(pc);
+    var encoded = toB64(JSON.stringify({ type: finalDesc.type, sdp: finalDesc.sdp }));
     var url = location.href.split('#')[0] + '#join=' + encoded;
 
     showShareUI(url);
@@ -481,13 +474,15 @@ async function applyAnswer() {
 var raw = document.getElementById(‘answer-in’).value.trim();
 if (!raw) { toast(‘Paste the answer code first’, ‘err’); return; }
 try {
-var sdp = JSON.parse(fromB64(raw));
-await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+var parsed = JSON.parse(fromB64(raw));
+var sdp = new RTCSessionDescription({ type: parsed.type || ‘answer’, sdp: parsed.sdp });
+await pc.setRemoteDescription(sdp);
 var ov = document.getElementById(‘answer-overlay’);
 if (ov) ov.remove();
 setStatus(‘connecting…’, ‘connecting’);
 } catch(e) {
 toast(‘Invalid code — did you copy it fully?’, ‘err’);
+console.error(e);
 }
 }
 
@@ -514,12 +509,11 @@ try {
 var offer = JSON.parse(fromB64(encoded));
 makePC();
 await pc.setRemoteDescription(new RTCSessionDescription(offer));
-var answer = await pc.createAnswer();
-await pc.setLocalDescription(answer);
-await waitForICE(pc);
+await pc.setLocalDescription(await pc.createAnswer());
+var finalDesc = await gatherCandidates(pc);
 
 ```
-var answerCode = toB64(JSON.stringify(pc.localDescription));
+var answerCode = toB64(JSON.stringify({ type: finalDesc.type, sdp: finalDesc.sdp }));
 showAnswerCode(answerCode);
 
 document.getElementById('btn-host').style.display = 'none';
