@@ -388,11 +388,21 @@ document.addEventListener('keydown',function(e){
 // ── Connected / idle UI state ─────────────────────────────
 
 function goConnected(){
+  document.querySelectorAll('.ov.open').forEach(function(o){o.classList.remove('open');});
   document.getElementById('splash').style.display='none';
   document.getElementById('chat').style.display='flex';
   document.getElementById('drop-sec').style.display='';
   document.getElementById('files-sec').style.display='';
   document.getElementById('ci').disabled=false;
+  document.getElementById('ci').focus();
+  var banner=document.createElement('div');
+  banner.innerHTML='<span style="font-size:18px">&#9889;</span> Connected — peer to peer';
+  banner.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 24px;border-radius:4px;z-index:300;letter-spacing:.04em;box-shadow:0 4px 24px rgba(0,255,136,.35);white-space:nowrap;transition:opacity .4s,transform .4s';
+  document.body.appendChild(banner);
+  setTimeout(function(){
+    banner.style.opacity='0';banner.style.transform='translateX(-50%) translateY(-6px)';
+    setTimeout(function(){banner.remove();},420);
+  },2400);
 }
 
 function goIdle(){
@@ -424,9 +434,7 @@ function makePC(){
     if(s==='connected'||s==='completed'){
       setStatus('connected','on');
       goConnected();
-      closeOv('host-ov'); closeOv('code-ov');
       addMsg('⚡ connected — p2p link established');
-      toast('Connected!','ok');
     } else if(s==='failed'){
       setStatus('failed','err');
       toast('Connection failed — check browser console','er');
@@ -513,17 +521,36 @@ function cancelHost(){closeOv('host-ov');doDisconnect();}
 
 function applyAnswer(){
   var raw=document.getElementById('ans-inp').value.trim();
-  if(!raw){toast('Paste the answer code','er');return;}
+  if(!raw){toast('Paste the answer code first','er');return;}
+
+  // Already connected — just close
+  if(pc&&(pc.iceConnectionState==='connected'||pc.iceConnectionState==='completed')){
+    closeOv('host-ov'); return;
+  }
+  // Wrong signalling state guard
+  if(!pc||pc.signalingState==='stable'){
+    toast('Session expired — create a new session','er'); return;
+  }
+
+  var btn=document.querySelector('#host-ov .btn.primary');
+  if(btn){btn.disabled=true;btn.innerHTML='⏳ Connecting…';}
+
   try{
     var parsed=JSON.parse(b64dec(raw));
     pc.setRemoteDescription(new RTCSessionDescription(parsed))
       .then(function(){setStatus('connecting…','wait');})
-      .catch(function(e){console.error('[RELAY] applyAnswer:',e);toast('Bad answer code: '+e.message,'er');});
+      .catch(function(e){
+        console.error('[RELAY] applyAnswer:',e);
+        toast('Bad answer code: '+e.message,'er');
+        if(btn){btn.disabled=false;btn.innerHTML='Complete →';}
+      });
   }catch(e){
     console.error('[RELAY] applyAnswer parse:',e);
     toast('Could not read answer code — copy it fully','er');
+    if(btn){btn.disabled=false;btn.innerHTML='Complete →';}
   }
 }
+
 
 // ── JOINER flow ───────────────────────────────────────────
 
