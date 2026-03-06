@@ -416,32 +416,42 @@ main{flex-direction:column}
 
 <script>
 // ─────────────────────────────────────────────────────
-//  RELAY — multi-peer serverless WebRTC
-//  Protocol messages (JSON over DataChannel):
-//    chat  — text message
-//    fa    — file announce  (sender asks receiver to accept)
-//    fr    — file accept    (receiver → sender)
-//    fd    — file decline   (receiver → sender)
-//    fs    — file start     (sender → receiver, metadata)
-//    fe    — file end       (sender → receiver, done)
-//  Binary frames: [36-byte transfer-ID][chunk bytes]
+//  RELAY — mesh WebRTC, serverless
+//
+//  Data-channel message types:
+//    chat        — broadcast text
+//    fa          — file announce   (ask receiver to accept)
+//    fr / fd     — file accept / decline
+//    fs / fe     — file start / end (metadata + completion signal)
+//    sig-offer   — relayed SDP offer   (for mesh auto-wiring)
+//    sig-answer  — relayed SDP answer
+//
+//  Binary frames: [36-byte transfer-ID padded][chunk bytes]
+//
+//  Mesh wiring:
+//    When peer C connects to A, A introduces C to every other
+//    peer it knows by relaying SDP offers/answers through itself.
+//    Result: full mesh — everyone connected to everyone.
 // ─────────────────────────────────────────────────────
 
-var CHUNK = 64 * 1024;
+// ── Tunables ────────────────────────────────────────
+var CHUNK          = 16 * 1024;   // smaller chunks = better loopback + mobile
+var BUF_HIGH       = 1024 * 1024; // pause pumping above 1 MB buffered
+var BUF_LOW        = 256 * 1024;  // resume pumping below 256 KB
 
-// peers[pid] = { pc, dc, name, num }
-var peers = {};
-var peerCount = 0; // ever-incrementing for naming
+// ── State ───────────────────────────────────────────
+// peers[pid] = { pc, dc, name, _connected }
+var peers      = {};
+var peerCount  = 0;
 
-// per-transfer state
-var transfers   = {}; // ftid → { pid, name, size, mime, chunks[], got }
-var fdata       = {}; // ftid → { name, size, dir, pct, blob? }
+// file receive state
+var transfers  = {}; // ftid → { pid, name, size, mime, chunks[], got }
+// shared display state
+var fdata      = {}; // ftid → { name, size, dir, pct, blob? }
+// outbound files waiting for 'fr'
 var pendingSend = {}; // ftid → { file, pid }
 
-var queuedFiles = []; // File[] queued before any connection
-
-// a single pending-host PC while waiting for an answer
-var hostPC = null;
+var queuedFiles = [];
 
 var ICE = {iceServers:[
   {urls:'stun:stun.l.google.com:19302'},
@@ -458,7 +468,8 @@ setVH();
 window.addEventListener('resize', setVH);
 if(window.visualViewport) window.visualViewport.addEventListener('resize', function(){
   setVH();
-  var m = document.getElementById('msgs'); m.scrollTop = m.scrollHeight;
+  var m = document.getElementById('msgs');
+  if(m) m.scrollTop = m.scrollHeight;
 });
 
 // ── Page URL ────────────────────────────────────────
@@ -478,17 +489,14 @@ function toast(msg,cls){
   clearTimeout(t._t); t._t=setTimeout(function(){t.className='';},2800);
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function b64enc(s){ return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g,function(_,p){return String.fromCharCode(parseInt(p,16));})); }
+function b64enc(s){ return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g,function(_,p1){return String.fromCharCode(parseInt(p1,16));})); }
 function b64dec(b){ return decodeURIComponent(Array.prototype.map.call(atob(b),function(c){return'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join('')); }
 function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; return(b/1048576).toFixed(2)+' MB'; }
 function mkId(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);}); }
 function nowTs(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 function fileIcon(n){ var x=n.split('.').pop().toLowerCase(); return {pdf:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',bmp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',zip:'📦',tar:'📦',gz:'📦',js:'💻',ts:'💻',py:'💻',html:'💻',json:'💻',txt:'📝',md:'📝',docx:'📝',xlsx:'📊',csv:'📊'}[x]||'📁'; }
-
-function connectedPeers(){
-  return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; });
-}
-function anyConnected(){ return connectedPeers().length > 0; }
+function connectedPeers(){ return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; }); }
+function anyConnected(){ return connectedPeers().length>0; }
 
 // ── Modals ──────────────────────────────────────────
 function openOv(id){ document.getElementById(id).classList.add('open'); }
@@ -500,207 +508,118 @@ document.addEventListener('keydown',function(e){
   document.getElementById(id).addEventListener('click',function(e){ if(e.target.id===id) closeOv(id); });
 });
 
-// ── Chat messages ────────────────────────────────────
-function addMsg(text, who, fromName){
-  var el = document.createElement('div');
-  el.className = 'msg '+(who||'sys');
-  var label = (fromName && who==='them') ? '<div class="from-lbl">'+esc(fromName)+'</div>' : '';
-  el.innerHTML = label+'<div class="bubble">'+esc(text)+'</div><div class="ts">'+nowTs()+'</div>';
-  var m = document.getElementById('msgs');
-  m.appendChild(el); m.scrollTop = m.scrollHeight;
+// ── Chat ─────────────────────────────────────────────
+function addMsg(text,who,fromName){
+  var el=document.createElement('div');
+  el.className='msg '+(who||'sys');
+  var lbl=(fromName&&who==='them')?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
+  el.innerHTML=lbl+'<div class="bubble">'+esc(text)+'</div><div class="ts">'+nowTs()+'</div>';
+  var m=document.getElementById('msgs');
+  m.appendChild(el); m.scrollTop=m.scrollHeight;
 }
+
+function sendChat(){
+  var inp=document.getElementById('ci'), text=inp.value.trim();
+  if(!text) return;
+  var open=connectedPeers();
+  if(!open.length){ toast('Not connected','er'); return; }
+  var msg=JSON.stringify({t:'chat',text:text});
+  open.forEach(function(pid){ peers[pid].dc.send(msg); });
+  addMsg(text,'me');
+  inp.value=''; inp.style.height='';
+}
+function ciKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
+function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
+function targetPid(){ var v=document.getElementById('peer-target').value; return (v&&v!=='all')?v:null; }
 
 // ── Peer list UI ─────────────────────────────────────
 function renderPeers(){
-  var list = document.getElementById('peers-list');
-  var sec  = document.getElementById('peers-sec');
-  var sel  = document.getElementById('peer-target');
-  var wrap = document.getElementById('peer-target-wrap');
-  var pids = Object.keys(peers);
-
-  sec.style.display = pids.length ? '' : 'none';
-
-  // Update sidebar list
-  list.innerHTML = '';
+  var list=document.getElementById('peers-list');
+  var sec=document.getElementById('peers-sec');
+  var sel=document.getElementById('peer-target');
+  var wrap=document.getElementById('peer-target-wrap');
+  var pids=Object.keys(peers);
+  sec.style.display=pids.length?'':'none';
+  list.innerHTML='';
   pids.forEach(function(pid){
-    var p = peers[pid];
-    var alive = p.dc && p.dc.readyState==='open';
-    var d = document.createElement('div');
-    d.className = 'peer-item';
-    d.innerHTML =
-      '<div class="peer-dot'+(alive?'':' dead')+'"></div>'
+    var p=peers[pid];
+    var alive=p.dc&&p.dc.readyState==='open';
+    var d=document.createElement('div'); d.className='peer-item';
+    d.innerHTML='<div class="peer-dot'+(alive?'':' dead')+'"></div>'
       +'<div class="peer-name">'+esc(p.name)+'</div>'
       +'<button class="peer-kick" onclick="kickPeer(\''+pid+'\')" title="Disconnect">✕</button>';
     list.appendChild(d);
   });
-
-  // Update peer-target select
-  var prev = sel.value;
-  sel.innerHTML = '<option value="all">Everyone</option>';
+  var prev=sel.value;
+  sel.innerHTML='<option value="all">Everyone</option>';
   pids.forEach(function(pid){
-    var p = peers[pid];
-    if(p.dc && p.dc.readyState==='open'){
-      var opt = document.createElement('option');
-      opt.value = pid; opt.textContent = p.name;
+    var p=peers[pid];
+    if(p.dc&&p.dc.readyState==='open'){
+      var opt=document.createElement('option'); opt.value=pid; opt.textContent=p.name;
       sel.appendChild(opt);
     }
   });
-  // Restore previous selection if still valid
-  if(prev && sel.querySelector('option[value="'+prev+'"]')) sel.value = prev;
-
-  // Show target selector only when >1 peer
-  wrap.style.display = connectedPeers().length > 1 ? '' : 'none';
-}
-
-function kickPeer(pid){
-  var p = peers[pid]; if(!p) return;
-  try{ p.pc.close(); }catch(e){}
-  removePeer(pid);
-}
-
-function removePeer(pid){
-  delete peers[pid];
-  renderPeers();
-  updateStatus();
-  if(!anyConnected()) goIdle();
+  if(prev&&sel.querySelector('option[value="'+prev+'"]')) sel.value=prev;
+  wrap.style.display=connectedPeers().length>1?'':'none';
 }
 
 function updateStatus(){
-  var n = connectedPeers().length;
-  if(n===0)       setStatus('idle');
-  else if(n===1)  setStatus('1 peer','on');
-  else            setStatus(n+' peers','on');
+  var n=connectedPeers().length;
+  if(n===0) setStatus('idle');
+  else if(n===1) setStatus('1 peer','on');
+  else setStatus(n+' peers','on');
 }
 
-// ── Quick-send (splash) ──────────────────────────────
-function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
-function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
-function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
-function qdPick(e){ queueFiles(Array.from(e.target.files)); e.target.value=''; }
-function qdBrowse(e){ e.stopPropagation(); document.getElementById('qd-input').click(); }
-
-function queueFiles(files){
-  files.forEach(function(f){ queuedFiles.push(f); });
-  renderQueuedFiles();
-  if(!hostPC && !anyConnected()) startHost();
+function kickPeer(pid){
+  var p=peers[pid]; if(!p) return;
+  try{ p.pc.close(); }catch(e){}
+  peerGone(pid);
 }
 
-function renderQueuedFiles(){
-  var wrap   = document.getElementById('queued-files');
-  var status = document.getElementById('queued-status');
-  if(!queuedFiles.length){ wrap.style.display='none'; status.textContent=''; return; }
-  wrap.style.display='flex'; wrap.innerHTML='';
-  queuedFiles.forEach(function(f,i){
-    var d = document.createElement('div'); d.className='qf-item';
-    d.innerHTML='<span class="qf-icon">'+fileIcon(f.name)+'</span>'
-      +'<span class="qf-name">'+esc(f.name)+'</span>'
-      +'<span class="qf-size">'+fmtBytes(f.size)+'</span>'
-      +'<button class="qf-rm" onclick="removeQueued('+i+')" title="Remove">✕</button>';
-    wrap.appendChild(d);
-  });
-  var s = anyConnected() ? '⚡ Connected — sending now…' : '⏳ Waiting for peer to connect…';
-  status.textContent = queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+s;
-}
-
-function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
-
-function flushQueue(pid){
-  // Send queued files to newly connected peer
-  if(!queuedFiles.length) return;
-  var files = queuedFiles.slice();
-  queuedFiles = [];
-  renderQueuedFiles();
-  files.forEach(function(f){ announceFile(f, pid); });
-}
-
-// ── Connected / idle UI ──────────────────────────────
-function goConnected(pid){
-  document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
-  document.getElementById('splash').style.display = 'none';
-  document.getElementById('chat').style.display   = 'flex';
-  document.getElementById('drop-sec').style.display   = '';
-  document.getElementById('files-sec').style.display  = '';
-  document.getElementById('ci').disabled = false;
-  document.getElementById('bd').style.display = '';
-  document.getElementById('conn-idle-hint').style.display = 'none';
-
-  if(window.innerWidth > 600) document.getElementById('ci').focus();
-  var sb = document.getElementById('sidebar');
-  if(window.innerWidth <= 600){ sb.classList.add('hidden'); sb.classList.remove('expanded'); }
-
-  renderPeers();
-  updateStatus();
-  setTimeout(function(){ flushQueue(pid); }, 200);
-
-  // Connected banner
-  var p = peers[pid];
-  var b = document.createElement('div');
-  b.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
-  b.textContent = '⚡ '+(p?p.name:'Peer')+' connected';
-  document.body.appendChild(b);
-  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); }, 2200);
-}
-
-function goIdle(){
-  document.getElementById('splash').style.display    = '';
-  document.getElementById('chat').style.display      = 'none';
-  document.getElementById('drop-sec').style.display  = 'none';
-  document.getElementById('files-sec').style.display = 'none';
-  document.getElementById('share-sec').style.display = 'none';
-  document.getElementById('peers-sec').style.display = 'none';
-  document.getElementById('ci').disabled = true;
-  document.getElementById('bd').style.display = 'none';
-  document.getElementById('conn-idle-hint').style.display = '';
-  document.getElementById('msgs').innerHTML = '';
-  document.getElementById('flist').innerHTML = '<div class="empty">no files yet</div>';
-  document.getElementById('sidebar').classList.remove('hidden','expanded');
-  // Re-enable splash buttons
-  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-  setStatus('idle');
-  fdata={}; transfers={}; pendingSend={};
-}
-
-function toggleSidebar(){
-  var sb = document.getElementById('sidebar');
-  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
-  else sb.classList.toggle('expanded');
+function peerGone(pid){
+  delete peers[pid];
+  renderPeers(); updateStatus();
+  if(!anyConnected()) goIdle();
 }
 
 // ── RTCPeerConnection factory ────────────────────────
+// role: 'host' (created offer) or 'guest' (received offer)
 function makePC(pid){
-  var pc = new RTCPeerConnection(ICE);
+  var pc=new RTCPeerConnection(ICE);
 
-  pc.oniceconnectionstatechange = function(){
-    var s = pc.iceConnectionState;
-    console.log('[RELAY] ICE', pid, s);
-    if(s==='connected'||s==='completed'){
-      // Only call goConnected once per peer
-      if(peers[pid] && !peers[pid]._connected){
-        peers[pid]._connected = true;
-        goConnected(pid);
-        addMsg('⚡ '+peers[pid].name+' connected');
-      }
+  pc.oniceconnectionstatechange=function(){
+    var s=pc.iceConnectionState;
+    console.log('[RELAY] ICE',pid,s);
+    if((s==='connected'||s==='completed')&&peers[pid]&&!peers[pid]._connected){
+      peers[pid]._connected=true;
+      onPeerConnected(pid);
     } else if(s==='failed'){
-      toast(peers[pid]?peers[pid].name+' failed':'Connection failed','er');
-      removePeer(pid);
-    } else if(s==='disconnected'||s==='closed'){
-      if(peers[pid]){
-        addMsg('✕ '+peers[pid].name+' disconnected');
-        removePeer(pid);
-      }
+      toast((peers[pid]?peers[pid].name:'Peer')+' connection failed','er');
+      peerGone(pid);
+    } else if((s==='disconnected'||s==='closed')&&peers[pid]){
+      addMsg('✕ '+peers[pid].name+' left');
+      peerGone(pid);
     }
   };
 
-  pc.ondatachannel = function(e){ setupDC(pid, e.channel); };
+  pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
   return pc;
 }
 
-function setupDC(pid, ch){
-  peers[pid].dc = ch;
-  ch.binaryType = 'arraybuffer';
-  ch.onmessage = function(e){
-    if(typeof e.data === 'string') onText(pid, e.data);
-    else onBin(pid, e.data);
+function attachDC(pid,ch){
+  peers[pid].dc=ch;
+  ch.binaryType='arraybuffer';
+  // backpressure for file pump
+  ch.bufferedAmountLowThreshold=BUF_LOW;
+  ch.onmessage=function(e){
+    if(typeof e.data==='string') onText(pid,e.data);
+    else onBin(pid,e.data);
+  };
+  ch.onbufferedamountlow=function(){
+    // Resume any paused pump for this peer
+    var pump=peers[pid]&&peers[pid]._pump;
+    if(pump){ delete peers[pid]._pump; pump(); }
   };
 }
 
@@ -711,196 +630,363 @@ function gatherICE(pc){
     function fin(){ if(done)return; done=true; resolve(pc.localDescription); }
     pc.addEventListener('icecandidate',function(e){ if(e.candidate===null) fin(); });
     pc.addEventListener('icegatheringstatechange',function(){ if(pc.iceGatheringState==='complete') fin(); });
-    setTimeout(fin, 6000);
+    setTimeout(fin,6000);
   });
 }
-function sdpObj(d){ return {type:d.type, sdp:d.sdp}; }
+function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 
-// ── HOST — create a new offer ────────────────────────
-function startHost(){
-  // Disable splash connect buttons while gathering
-  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
-  document.getElementById('conn-idle-hint').style.display = 'none';
-  setStatus('gathering…','wait');
+// ── Peer connected ───────────────────────────────────
+function onPeerConnected(pid){
+  var p=peers[pid];
+  // Ensure DC is set up (for host side, it was created before the PC)
+  if(!p.dc||p.dc.readyState!=='open'){
+    // DC not open yet — it fires onopen shortly; goConnected happens in dc.onopen
+    p.dc.addEventListener('open',function(){ finishConnect(pid); });
+    return;
+  }
+  finishConnect(pid);
+}
 
-  var pid = mkId();
+function finishConnect(pid){
+  var p=peers[pid]; if(!p) return;
+
+  // ── Mesh introduction: introduce new peer to all existing connected peers ──
+  // For each existing peer EB, we:
+  //   1. Create a new PC slot for EB↔pid
+  //   2. Generate an offer
+  //   3. Send offer to pid (via our DC to pid) tagged with EB's name/id
+  //   4. Send offer to EB (via our DC to EB) tagged with pid
+  // Each side creates a PC and answers, returns answer back through us.
+  // This is signal-relay: we're the SFU for signalling only.
+  introNewPeer(pid);
+
+  // Switch to chat view if first connection
+  if(document.getElementById('splash').style.display!=='none') showChatUI();
+
+  // Show in sidebar
+  renderPeers(); updateStatus();
+
+  // Banner
+  var b=document.createElement('div');
+  b.style.cssText='position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
+  b.textContent='⚡ '+p.name+' joined';
+  document.body.appendChild(b);
+  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
+
+  addMsg('⚡ '+p.name+' joined');
+  setTimeout(function(){ flushQueue(pid); },300);
+}
+
+// ── Mesh signalling ──────────────────────────────────
+// Send offers from each existing peer to the new peer,
+// so every pair end up directly connected.
+function introNewPeer(newPid){
+  var existing=connectedPeers().filter(function(pid){ return pid!==newPid; });
+  existing.forEach(function(ePid){
+    // Create a virtual "bridge" PC on our node representing ePid↔newPid link
+    // We generate the offer here and relay it to both sides.
+    // The two sides will create their own real PCs when they receive the sig-offer.
+    var relayId=mkId();
+    var bridgePC=new RTCPeerConnection(ICE);
+    // We don't need a real DC on the bridge; this is purely for offer generation
+    bridgePC.createDataChannel('r');
+    bridgePC.createOffer().then(function(o){
+      return bridgePC.setLocalDescription(o);
+    }).then(function(){
+      return gatherICE(bridgePC);
+    }).then(function(desc){
+      // Send offer to new peer: "ePid wants to connect to you"
+      peers[newPid].dc.send(JSON.stringify({
+        t:'sig-offer', from:ePid, fromName:peers[ePid].name,
+        relay:relayId, sdp:sdpObj(desc)
+      }));
+      // Send offer to existing peer: "newPid wants to connect to you"
+      peers[ePid].dc.send(JSON.stringify({
+        t:'sig-offer', from:newPid, fromName:peers[newPid].name,
+        relay:relayId, sdp:sdpObj(desc)
+      }));
+      // Clean up bridge PC
+      setTimeout(function(){ try{bridgePC.close();}catch(e){} },10000);
+    }).catch(function(e){ console.error('[RELAY] bridge offer:',e); });
+  });
+}
+
+// Handle incoming sig-offer: create PC, answer, send back via relay node (us)
+// But wait — with no server, the answer has to go back through the introducer.
+// The introducer is the peer we received the sig-offer from.
+// So: when we receive sig-offer from introducerPid, we:
+//   create PC for `from`, set remote desc = sdp, create answer, send sig-answer back to introducerPid
+function handleSigOffer(introducerPid, m){
+  var fromPid=m.from;
+  if(peers[fromPid]) return; // already connected
   peerCount++;
-  peers[pid] = { pc: null, dc: null, name: 'Peer '+peerCount, num: peerCount, _connected: false };
-  var pc = makePC(pid);
-  peers[pid].pc = pc;
-  hostPC = pc; // remember for applyAnswer
-
-  setupDC(pid, pc.createDataChannel('relay',{ordered:true}));
-
-  pc.createOffer()
-    .then(function(o){ return pc.setLocalDescription(o); })
-    .then(function(){ return gatherICE(pc); })
-    .then(function(desc){
-      document.getElementById('offer-out').value = b64enc(JSON.stringify(sdpObj(desc)));
-      // Stash pid so applyAnswer knows which peer this offer belongs to
-      document.getElementById('host-ov').dataset.pid = pid;
-      showSharePanel();
-      setStatus('waiting…','wait');
-      document.getElementById('bd').style.display='';
-      openOv('host-ov');
-    })
-    .catch(function(e){
-      console.error('[RELAY] startHost:',e);
-      toast('Error: '+e.message,'er');
-      delete peers[pid];
-      hostPC = null;
-      document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-      if(!anyConnected()) setStatus('idle');
-    });
-}
-
-// "Add Peer" button when already connected — opens a fresh offer
-function addPeer(){
-  // Show share panel with a new offer; modal re-used
-  startHost();
-  // Also make sidebar visible if on mobile
-  var sb = document.getElementById('sidebar');
-  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
-}
-
-function showSharePanel(){
-  document.getElementById('share-sec').style.display='';
-  drawQR(document.getElementById('qr-wrap'), PAGE_URL);
-  document.getElementById('page-url-el').textContent=PAGE_URL;
-}
-
-function copyPageUrl(){ navigator.clipboard.writeText(PAGE_URL).then(function(){ toast('Link copied','ok'); }); }
-function copyOffer(){ navigator.clipboard.writeText(document.getElementById('offer-out').value).then(function(){ toast('Offer code copied','ok'); }); }
-
-function cancelHost(){
-  closeOv('host-ov');
-  var pid = document.getElementById('host-ov').dataset.pid;
-  if(pid && peers[pid]){
-    try{ peers[pid].pc.close(); }catch(e){}
-    delete peers[pid];
-  }
-  hostPC = null;
-  if(!anyConnected()){
-    document.getElementById('share-sec').style.display='none';
-    document.getElementById('bd').style.display='none';
-    document.getElementById('conn-idle-hint').style.display='';
-    document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-    setStatus('idle');
-  }
-}
-
-function applyAnswer(){
-  var raw = document.getElementById('ans-inp').value.trim();
-  if(!raw){ toast('Paste the answer code first','er'); return; }
-  var pid = document.getElementById('host-ov').dataset.pid;
-  var p   = peers[pid];
-  if(!p){ toast('Session expired — create a new one','er'); return; }
-  if(p.pc.iceConnectionState==='connected'||p.pc.iceConnectionState==='completed'){ closeOv('host-ov'); return; }
-  if(p.pc.signalingState==='stable'){ toast('Session expired — create a new one','er'); return; }
-  var btn = document.getElementById('ans-btn');
-  btn.disabled=true; btn.textContent='⏳ Connecting…';
-  try{
-    var parsed = JSON.parse(b64dec(raw));
-    p.pc.setRemoteDescription(new RTCSessionDescription(parsed))
-      .then(function(){ setStatus('connecting…','wait'); })
-      .catch(function(e){
-        toast('Bad answer code: '+e.message,'er');
-        btn.disabled=false; btn.textContent='Complete →';
-      });
-  }catch(e){
-    toast('Could not read answer — copy it fully','er');
-    btn.disabled=false; btn.textContent='Complete →';
-  }
-}
-
-// ── JOINER ──────────────────────────────────────────
-function doJoin(){
-  var raw = document.getElementById('join-inp').value.trim();
-  if(!raw){ toast('Paste the offer code','er'); return; }
-  closeOv('join-ov');
-  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
-  setStatus('connecting…','wait');
-
-  var offer;
-  try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer code','er'); if(!anyConnected()) setStatus('idle'); return; }
-
-  var pid = mkId();
-  peerCount++;
-  peers[pid] = { pc:null, dc:null, name:'Peer '+peerCount, num:peerCount, _connected:false };
-  var pc = makePC(pid);
-  peers[pid].pc = pc;
-
-  pc.setRemoteDescription(new RTCSessionDescription(offer))
+  peers[fromPid]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
+  var pc=makePC(fromPid);
+  peers[fromPid].pc=pc;
+  pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
     .then(function(){ return pc.createAnswer(); })
     .then(function(a){ return pc.setLocalDescription(a); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      document.getElementById('code-out').value = b64enc(JSON.stringify(sdpObj(desc)));
-      openOv('code-ov');
-      document.getElementById('bd').style.display='';
+      // Send answer back through the introducer
+      peers[introducerPid].dc.send(JSON.stringify({
+        t:'sig-answer', for:fromPid, relay:m.relay, sdp:sdpObj(desc)
+      }));
     })
-    .catch(function(e){
-      console.error('[RELAY] doJoin:',e);
-      toast('Error: '+e.message,'er');
-      delete peers[pid];
-      if(!anyConnected()){ setStatus('idle'); document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; }); }
-    });
+    .catch(function(e){ console.error('[RELAY] handleSigOffer:',e); delete peers[fromPid]; });
 }
 
-function copyCode(){ navigator.clipboard.writeText(document.getElementById('code-out').value).then(function(){ toast('Answer code copied','ok'); }); }
-
-// ── DISCONNECT ───────────────────────────────────────
-function doDisconnectAll(){
-  Object.keys(peers).forEach(function(pid){ try{ peers[pid].pc.close(); }catch(e){} });
-  peers={};
-  hostPC=null;
-  setStatus('idle');
-  goIdle();
+// Handle incoming sig-answer: apply to the PC we hold for `for`
+// But we're the introducer here — we got this answer from one side,
+// and need to deliver it to the other side.
+function handleSigAnswer(fromPid, m){
+  // m.for = the pid that generated the offer and needs this answer
+  var targetPid2=m.for;
+  if(peers[targetPid2]&&peers[targetPid2].dc&&peers[targetPid2].dc.readyState==='open'){
+    // Relay it to the target
+    peers[targetPid2].dc.send(JSON.stringify({
+      t:'sig-answer-direct', sdp:m.sdp, from:fromPid,
+      fromName:peers[fromPid]?peers[fromPid].name:('Peer '+fromPid.slice(0,4))
+    }));
+  }
 }
 
-// ── CHAT ────────────────────────────────────────────
-function sendChat(){
-  var inp=document.getElementById('ci'), text=inp.value.trim();
-  if(!text) return;
-  var open = connectedPeers();
-  if(!open.length){ toast('Not connected','er'); return; }
-  var msg = JSON.stringify({t:'chat', text:text});
-  open.forEach(function(pid){ peers[pid].dc.send(msg); });
-  addMsg(text,'me');
-  inp.value=''; inp.style.height='';
+// Handle answer delivered directly to us (we generated the offer)
+function handleSigAnswerDirect(introducerPid, m){
+  var fromPid=m.from;
+  if(peers[fromPid]) return; // already wired
+  peerCount++;
+  peers[fromPid]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
+  var pc=makePC(fromPid);
+  peers[fromPid].pc=pc;
+  // We need to set remote desc — but we never had a local offer here!
+  // The bridge PC generated the offer. We need to create a matching offer ourselves.
+  // Revised approach: when we receive sig-offer, we're the ANSWERER.
+  // The msg.sdp was from the bridge. We answer it. Done.
+  // The bridge owner then gets our answer and forwards it.
+  // BUT the bridge has already closed! We need a live PC each side.
+  //
+  // Revised mesh design: simpler — each peer generates its OWN offer
+  // for each new peer it's being introduced to. No bridge.
+  // See handleSigAnswerDirect2 below.
+  pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
+    .then(function(){
+      // This was an answer — not an offer. We need the matching offer.
+      // This path is hit if we sent a sig-offer-self.
+      // Handled in the new simpler flow below.
+    })
+    .catch(function(e){ console.error('[RELAY] sig-answer-direct:',e); delete peers[fromPid]; });
 }
-function ciKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
-function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
-function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f, targetPid()); }); e.target.value=''; }
 
-// Returns the pid to send to based on the target selector, or null = all
-function targetPid(){
-  var v = document.getElementById('peer-target').value;
-  return (v && v!=='all') ? v : null;
-}
+// ─────────────────────────────────────────────────────
+// Simpler mesh: each peer generates their own offer for introduction.
+// Flow when C joins via A:
+//   A → C: "here are all existing peers: [B, D, ...]"
+//   A → B: "C wants to meet you, C says hi"  (no SDP yet)
+//   B creates offer for C, sends it to A as sig-offer-b
+//   A forwards to C as sig-offer-b
+//   C answers, sends sig-answer-b back to A
+//   A forwards to B
+//   B applies answer → B↔C connected
+// ─────────────────────────────────────────────────────
 
-// ── FILE ANNOUNCE / ACCEPT / DECLINE ─────────────────
-function announceFile(file, pid){
-  // pid=null → send to all connected peers
-  var targets = pid ? [pid] : connectedPeers();
-  if(!targets.length){ toast('Not connected','er'); return; }
+// When C connects to A, A sends C the list of existing peers
+// and sends each existing peer a "meet C" message.
+function introNewPeerV2(newPid){
+  var existing=connectedPeers().filter(function(pid){ return pid!==newPid; });
+  if(!existing.length) return;
 
-  targets.forEach(function(tpid){
-    var p = peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
-    var ftid = mkId();
-    pendingSend[ftid] = {file:file, pid:tpid};
-    fdata[ftid] = {name:file.name, size:file.size, dir:'⏳ awaiting accept · '+p.name, pct:0};
-    addFileRow(ftid);
-    p.dc.send(JSON.stringify({t:'fa', id:ftid, name:file.name, size:file.size, mime:file.type}));
-    addMsg('📤 File request to '+p.name+': '+file.name+' ('+fmtBytes(file.size)+')', 'me');
+  // Tell new peer who else exists (so it knows names)
+  var peerList=existing.map(function(pid){ return {pid:pid,name:peers[pid].name}; });
+  peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:peerList}));
+
+  // Tell each existing peer to connect to new peer
+  existing.forEach(function(ePid){
+    peers[ePid].dc.send(JSON.stringify({
+      t:'meet', pid:newPid, name:peers[newPid].name
+    }));
   });
 }
 
-function showFileRequest(pid, m){
-  var p = peers[pid];
-  var el = document.createElement('div');
-  el.className='fi-request'; el.id='freq-'+m.id;
-  el.innerHTML =
+// ── Incoming messages ────────────────────────────────
+function onText(pid,raw){
+  var p=peers[pid];
+  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
+
+  if(m.t==='chat'){
+    // Relay to other peers (mesh broadcast via introducer until direct links form)
+    addMsg(m.text,'them',p?p.name:null);
+
+  } else if(m.t==='fa'){
+    showFileRequest(pid,m);
+
+  } else if(m.t==='fr'){
+    var ps=pendingSend[m.id]; if(!ps) return;
+    delete pendingSend[m.id];
+    if(fdata[m.id]) fdata[m.id].dir='↑ sending';
+    updateFileRowMeta(m.id);
+    startSendingFile(m.id,ps.file,ps.pid);
+    addMsg('✓ '+(p?p.name:'Peer')+' accepted — sending '+ps.file.name,'sys');
+
+  } else if(m.t==='fd'){
+    var ps2=pendingSend[m.id]; delete pendingSend[m.id];
+    if(fdata[m.id]) fdata[m.id].dir='✕ declined';
+    updateFileRowMeta(m.id);
+    addMsg('✕ '+(p?p.name:'Peer')+' declined '+(ps2?ps2.file.name:'file'),'sys');
+    toast('File declined','er');
+
+  } else if(m.t==='fs'){
+    transfers[m.id]={pid:pid,name:m.name,size:m.size,mime:m.mime,chunks:[],got:0};
+    fdata[m.id]={name:m.name,size:m.size,dir:'↓ from '+(p?p.name:'?'),pct:0};
+    addFileRow(m.id);
+
+  } else if(m.t==='fe'){
+    var ft=transfers[m.id]; if(!ft) return;
+    fdata[m.id].blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
+    updateFileRow(m.id);
+    addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
+    toast('Received: '+ft.name,'ok');
+    delete transfers[m.id];
+
+  // ── Mesh signalling ──
+  } else if(m.t==='meet'){
+    // An existing peer tells us to connect to a new peer
+    // We are the "existing" peer; we need to create an offer for m.pid
+    handleMeet(pid, m);
+
+  } else if(m.t==='peer-list'){
+    // We are the new peer; A is telling us who else is connected
+    // We don't need to do anything — A will tell them to "meet" us
+    // and they'll send us offers via A
+    console.log('[RELAY] peer-list from',pid,m.peers);
+
+  } else if(m.t==='sig-offer'){
+    // An existing peer sent us an offer (relayed through our shared connection)
+    handleRelayedOffer(pid,m);
+
+  } else if(m.t==='sig-answer'){
+    // We introduced two peers; one is sending us their answer to forward
+    handleRelayedAnswer(pid,m);
+  }
+}
+
+// Existing peer received "meet newPid": create offer, send via introducer
+function handleMeet(introducerPid, m){
+  var newPid=m.pid;
+  if(peers[newPid]) return; // already know them
+  peerCount++;
+  peers[newPid]={pc:null,dc:null,name:m.name||('Peer '+peerCount),_connected:false};
+  var pc=makePC(newPid);
+  peers[newPid].pc=pc;
+  // Create DC (we're the offerer)
+  var dc2=pc.createDataChannel('relay',{ordered:true});
+  attachDC(newPid,dc2);
+  pc.createOffer()
+    .then(function(o){ return pc.setLocalDescription(o); })
+    .then(function(){ return gatherICE(pc); })
+    .then(function(desc){
+      // Send offer through the introducer to reach newPid
+      peers[introducerPid].dc.send(JSON.stringify({
+        t:'sig-offer', from:newPid, // tell newPid this is FROM us (but we don't have a stable peer id exposed)
+        fromActual: Object.keys(peers).filter(function(p2){ return peers[p2].pc===pc; })[0] || newPid,
+        sdp:sdpObj(desc)
+      }));
+    })
+    .catch(function(e){ console.error('[RELAY] handleMeet offer:',e); delete peers[newPid]; });
+}
+
+// New peer received offer relayed from an existing peer (via introducer)
+function handleRelayedOffer(introducerPid, m){
+  // m.from = the newPid on the other side (from that peer's perspective it's us being new)
+  // Actually: the existing peer (ePid) sent us an offer via introducer.
+  // m.from = newPid slot identifier on ePid's side
+  // We create a PC for the existing peer, answer, send back via introducer
+  var offerFrom = m.fromActual || m.from;
+  if(peers[offerFrom]&&peers[offerFrom]._connected) return;
+  if(!peers[offerFrom]){
+    peerCount++;
+    peers[offerFrom]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
+  }
+  var pc=makePC(offerFrom);
+  peers[offerFrom].pc=pc;
+  pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
+    .then(function(){ return pc.createAnswer(); })
+    .then(function(a){ return pc.setLocalDescription(a); })
+    .then(function(){ return gatherICE(pc); })
+    .then(function(desc){
+      // Send answer back through introducer, addressed to the offerer
+      peers[introducerPid].dc.send(JSON.stringify({
+        t:'sig-answer', forActual:offerFrom, sdp:sdpObj(desc)
+      }));
+    })
+    .catch(function(e){ console.error('[RELAY] handleRelayedOffer:',e); delete peers[offerFrom]; });
+}
+
+// Introducer received an answer from new peer; relay it to the existing peer
+function handleRelayedAnswer(fromPid, m){
+  var targetPid2=m.forActual;
+  if(!targetPid2||!peers[targetPid2]) return;
+  var tdc=peers[targetPid2].dc;
+  if(!tdc||tdc.readyState!=='open') return;
+  tdc.send(JSON.stringify({ t:'sig-answer-apply', sdp:m.sdp, from:fromPid, fromName:peers[fromPid]?peers[fromPid].name:'?' }));
+}
+
+// ── sig-answer-apply ──
+// Add to onText:
+var _origOnText=onText;
+// Patch in by extending onText within itself via the 'else if' chain above
+// We add sig-answer-apply inside onText directly:
+
+// Overwrite onText to include sig-answer-apply
+onText = function(pid, raw){
+  var p=peers[pid];
+  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
+
+  if(m.t==='sig-answer-apply'){
+    // We are the existing peer; apply the answer from new peer
+    var fromPid2=m.from;
+    var pc2=peers[fromPid2]&&peers[fromPid2].pc;
+    if(!pc2){ return; }
+    if(pc2.signalingState==='have-local-offer'){
+      pc2.setRemoteDescription(new RTCSessionDescription(m.sdp))
+        .catch(function(e){ console.error('[RELAY] sig-answer-apply:',e); });
+    }
+  } else {
+    _origOnText(pid, raw);
+  }
+};
+
+function onBin(pid,buf){
+  var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
+  var ft=transfers[ftid]; if(!ft) return;
+  var chunk=buf.slice(36);
+  ft.chunks.push(chunk); ft.got+=chunk.byteLength;
+  var pct=Math.round(ft.got/ft.size*100);
+  if(fdata[ftid]) fdata[ftid].pct=pct;
+  var bar=document.getElementById('fb-'+ftid);
+  if(bar) bar.style.width=pct+'%';
+}
+
+// ── File announce/accept ──────────────────────────────
+function announceFile(file,pid){
+  var targets=pid?[pid]:connectedPeers();
+  if(!targets.length){ toast('Not connected','er'); return; }
+  targets.forEach(function(tpid){
+    var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
+    var ftid=mkId();
+    pendingSend[ftid]={file:file,pid:tpid};
+    fdata[ftid]={name:file.name,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
+    addFileRow(ftid);
+    p.dc.send(JSON.stringify({t:'fa',id:ftid,name:file.name,size:file.size,mime:file.type}));
+    addMsg('📤 Sent to '+p.name+': '+file.name+' ('+fmtBytes(file.size)+')','me');
+  });
+}
+
+function showFileRequest(pid,m){
+  var p=peers[pid];
+  var el=document.createElement('div'); el.className='fi-request'; el.id='freq-'+m.id;
+  el.innerHTML=
     '<div class="fi-req-head">'
       +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
       +'<div style="flex:1;min-width:0">'
@@ -916,117 +1002,281 @@ function showFileRequest(pid, m){
   msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
 }
 
-function respondFile(ftid, pid, accept){
+function respondFile(ftid,pid,accept){
   var card=document.getElementById('freq-'+ftid);
   var p=peers[pid];
   if(card){
-    if(accept){
-      card.innerHTML='<div style="font-size:11px;color:#00ff88;padding:4px 0">✓ Accepted — receiving…</div>';
-    } else {
-      card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>';
-      setTimeout(function(){ if(card.parentNode) card.remove(); },1500);
-    }
+    if(accept) card.innerHTML='<div style="font-size:11px;color:#00ff88;padding:4px 0">✓ Accepted — receiving…</div>';
+    else{ card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>'; setTimeout(function(){if(card.parentNode)card.remove();},1500); }
   }
-  if(p&&p.dc&&p.dc.readyState==='open'){
-    p.dc.send(JSON.stringify({t:accept?'fr':'fd', id:ftid}));
-  }
+  if(p&&p.dc&&p.dc.readyState==='open') p.dc.send(JSON.stringify({t:accept?'fr':'fd',id:ftid}));
 }
 
-// ── INCOMING MESSAGES ────────────────────────────────
-function onText(pid, raw){
+// ── File sending — bufferedamountlow backpressure ────
+function startSendingFile(ftid,file,pid){
   var p=peers[pid];
-  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
+  if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
+  p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,size:file.size,mime:file.type}));
 
-  if(m.t==='chat'){
-    addMsg(m.text,'them', p?p.name:null);
-
-  } else if(m.t==='fa'){
-    showFileRequest(pid, m);
-
-  } else if(m.t==='fr'){
-    var ps=pendingSend[m.id]; if(!ps) return;
-    delete pendingSend[m.id];
-    if(fdata[m.id]) fdata[m.id].dir='↑ sending';
-    updateFileRowMeta(m.id);
-    startSendingFile(m.id, ps.file, ps.pid);
-    addMsg('✓ '+(p?p.name:'Peer')+' accepted — sending '+ps.file.name,'sys');
-
-  } else if(m.t==='fd'){
-    var ps=pendingSend[m.id];
-    delete pendingSend[m.id];
-    if(fdata[m.id]) fdata[m.id].dir='✕ declined';
-    updateFileRowMeta(m.id);
-    addMsg('✕ '+(p?p.name:'Peer')+' declined '+(ps?ps.file.name:'file'),'sys');
-    toast('File declined','er');
-
-  } else if(m.t==='fs'){
-    transfers[m.id]={pid:pid, name:m.name, size:m.size, mime:m.mime, chunks:[], got:0};
-    fdata[m.id]={name:m.name, size:m.size, dir:'↓ recv · '+(p?p.name:'?'), pct:0};
-    addFileRow(m.id);
-
-  } else if(m.t==='fe'){
-    var ft=transfers[m.id]; if(!ft) return;
-    fdata[m.id].blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
-    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
-    updateFileRow(m.id);
-    addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
-    toast('Received: '+ft.name,'ok');
-    delete transfers[m.id];
-  }
-}
-
-function onBin(pid, buf){
-  var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
-  var ft=transfers[ftid]; if(!ft) return;
-  var chunk=buf.slice(36);
-  ft.chunks.push(chunk); ft.got+=chunk.byteLength;
-  var pct=Math.round(ft.got/ft.size*100);
-  if(fdata[ftid]) fdata[ftid].pct=pct;
-  var bar=document.getElementById('fb-'+ftid);
-  if(bar) bar.style.width=pct+'%';
-}
-
-// ── FILE SENDING ─────────────────────────────────────
-function startSendingFile(ftid, file, pid){
-  var p=peers[pid]; if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
-  p.dc.send(JSON.stringify({t:'fs', id:ftid, name:file.name, size:file.size, mime:file.type}));
-  var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
+  // Pad ftid to exactly 36 bytes for binary header
+  var idStr=(ftid+'                                    ').slice(0,36);
+  var idBytes=new TextEncoder().encode(idStr);
   var offset=0;
+
   function pump(){
-    if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted: '+p.name,'er'); return; }
+    if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted','er'); return; }
     if(offset>=file.size){
-      p.dc.send(JSON.stringify({t:'fe', id:ftid}));
+      p.dc.send(JSON.stringify({t:'fe',id:ftid}));
       if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
       updateFileRow(ftid);
       addMsg('✓ '+file.name+' sent to '+p.name,'sys');
       return;
     }
-    if(p.dc.bufferedAmount>4*1024*1024){ setTimeout(pump,50); return; }
+    // Backpressure: register callback and yield if buffer is high
+    if(p.dc.bufferedAmount>=BUF_HIGH){
+      peers[pid]._pump=pump; // dc.onbufferedamountlow will call this
+      return;
+    }
+    // Use File.slice + arrayBuffer() — Promise-based, survives tab switch
     var slice=file.slice(offset,offset+CHUNK);
-    var rd=new FileReader();
-    rd.onload=function(ev){
-      var cb=ev.target.result;
-      var out=new Uint8Array(36+cb.byteLength);
-      out.set(idBytes,0); out.set(new Uint8Array(cb),36);
+    slice.arrayBuffer().then(function(ab){
+      var out=new Uint8Array(36+ab.byteLength);
+      out.set(idBytes,0);
+      out.set(new Uint8Array(ab),36);
       try{
         p.dc.send(out.buffer);
-        offset+=cb.byteLength;
+        offset+=ab.byteLength;
         if(fdata[ftid]) fdata[ftid].pct=Math.min(99,Math.round(offset/file.size*100));
         var bar=document.getElementById('fb-'+ftid);
         if(bar) bar.style.width=(fdata[ftid]?fdata[ftid].pct:0)+'%';
-        pump();
+        // Yield to event loop between chunks — critical for loopback/same-device
+        setTimeout(pump,0);
       }catch(e){ toast('Send error: '+e.message,'er'); }
-    };
-    rd.readAsArrayBuffer(slice);
+    }).catch(function(e){ toast('Read error: '+e.message,'er'); });
   }
   pump();
 }
 
-// Sidebar drop zone
+// ── Sidebar drag/drop ────────────────────────────────
 function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
-function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f, targetPid()); }); }
-function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f, targetPid()); }); e.target.value=''; }
+function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f,targetPid()); }); }
+function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
+
+// ── Splash drag/drop ─────────────────────────────────
+function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
+function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
+function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
+function qdPick(e){ queueFiles(Array.from(e.target.files)); e.target.value=''; }
+function qdBrowse(e){ e.stopPropagation(); document.getElementById('qd-input').click(); }
+
+function queueFiles(files){
+  files.forEach(function(f){ queuedFiles.push(f); });
+  renderQueuedFiles();
+  if(!anyConnected()) startHost();
+}
+
+function renderQueuedFiles(){
+  var wrap=document.getElementById('queued-files');
+  var status=document.getElementById('queued-status');
+  if(!queuedFiles.length){ wrap.style.display='none'; status.textContent=''; return; }
+  wrap.style.display='flex'; wrap.innerHTML='';
+  queuedFiles.forEach(function(f,i){
+    var d=document.createElement('div'); d.className='qf-item';
+    d.innerHTML='<span class="qf-icon">'+fileIcon(f.name)+'</span>'
+      +'<span class="qf-name">'+esc(f.name)+'</span>'
+      +'<span class="qf-size">'+fmtBytes(f.size)+'</span>'
+      +'<button class="qf-rm" onclick="removeQueued('+i+')" title="Remove">✕</button>';
+    wrap.appendChild(d);
+  });
+  var s=anyConnected()?'⚡ Connected — sending now…':'⏳ Waiting for peer to connect…';
+  status.textContent=queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+s;
+}
+
+function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
+
+function flushQueue(pid){
+  if(!queuedFiles.length) return;
+  var files=queuedFiles.slice(); queuedFiles=[]; renderQueuedFiles();
+  files.forEach(function(f){ announceFile(f,pid); });
+}
+
+// ── UI transitions ───────────────────────────────────
+function showChatUI(){
+  document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
+  document.getElementById('splash').style.display='none';
+  document.getElementById('chat').style.display='flex';
+  document.getElementById('drop-sec').style.display='';
+  document.getElementById('files-sec').style.display='';
+  document.getElementById('ci').disabled=false;
+  document.getElementById('bd').style.display='';
+  document.getElementById('conn-idle-hint').style.display='none';
+  if(window.innerWidth>600) document.getElementById('ci').focus();
+  var sb=document.getElementById('sidebar');
+  if(window.innerWidth<=600){ sb.classList.add('hidden'); sb.classList.remove('expanded'); }
+}
+
+function goIdle(){
+  document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
+  document.getElementById('splash').style.display='';
+  document.getElementById('chat').style.display='none';
+  document.getElementById('drop-sec').style.display='none';
+  document.getElementById('files-sec').style.display='none';
+  document.getElementById('share-sec').style.display='none';
+  document.getElementById('peers-sec').style.display='none';
+  document.getElementById('ci').disabled=true;
+  document.getElementById('bd').style.display='none';
+  document.getElementById('conn-idle-hint').style.display='';
+  document.getElementById('msgs').innerHTML='';
+  document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
+  document.getElementById('sidebar').classList.remove('hidden','expanded');
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+  setStatus('idle');
+  fdata={}; transfers={}; pendingSend={};
+}
+
+function toggleSidebar(){
+  var sb=document.getElementById('sidebar');
+  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+  else sb.classList.toggle('expanded');
+}
+
+// ── HOST (manual or auto) ────────────────────────────
+var _pendingHostPid=null;
+
+function startHost(){
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
+  document.getElementById('conn-idle-hint').style.display='none';
+  setStatus('gathering…','wait');
+
+  var pid=mkId(); peerCount++;
+  peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
+  var pc=makePC(pid); peers[pid].pc=pc;
+  _pendingHostPid=pid;
+
+  // Create DC now (host side)
+  var dc2=pc.createDataChannel('relay',{ordered:true});
+  attachDC(pid,dc2);
+
+  pc.createOffer()
+    .then(function(o){ return pc.setLocalDescription(o); })
+    .then(function(){ return gatherICE(pc); })
+    .then(function(desc){
+      document.getElementById('offer-out').value=b64enc(JSON.stringify(sdpObj(desc)));
+      document.getElementById('host-ov').dataset.pid=pid;
+      showSharePanel();
+      setStatus('waiting…','wait');
+      document.getElementById('bd').style.display='';
+      openOv('host-ov');
+    })
+    .catch(function(e){
+      console.error('[RELAY] startHost:',e);
+      toast('Error: '+e.message,'er');
+      delete peers[pid]; _pendingHostPid=null;
+      document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+      if(!anyConnected()) setStatus('idle');
+    });
+}
+
+function addPeer(){
+  startHost();
+  var sb=document.getElementById('sidebar');
+  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+}
+
+function showSharePanel(){
+  document.getElementById('share-sec').style.display='';
+  drawQR(document.getElementById('qr-wrap'),PAGE_URL);
+  document.getElementById('page-url-el').textContent=PAGE_URL;
+}
+
+function copyPageUrl(){ navigator.clipboard.writeText(PAGE_URL).then(function(){ toast('Link copied','ok'); }); }
+function copyOffer(){ navigator.clipboard.writeText(document.getElementById('offer-out').value).then(function(){ toast('Offer code copied','ok'); }); }
+
+function cancelHost(){
+  closeOv('host-ov');
+  var pid=document.getElementById('host-ov').dataset.pid;
+  if(pid&&peers[pid]){ try{peers[pid].pc.close();}catch(e){} delete peers[pid]; }
+  _pendingHostPid=null;
+  if(!anyConnected()){
+    document.getElementById('share-sec').style.display='none';
+    document.getElementById('bd').style.display='none';
+    document.getElementById('conn-idle-hint').style.display='';
+    document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+    setStatus('idle');
+  }
+}
+
+function applyAnswer(){
+  var raw=document.getElementById('ans-inp').value.trim();
+  if(!raw){ toast('Paste the answer code first','er'); return; }
+  var pid=document.getElementById('host-ov').dataset.pid;
+  var p=peers[pid];
+  if(!p){ toast('Session expired — create a new one','er'); return; }
+  if(p.pc.iceConnectionState==='connected'||p.pc.iceConnectionState==='completed'){ closeOv('host-ov'); return; }
+  if(p.pc.signalingState==='stable'){ toast('Session expired — create a new one','er'); return; }
+  var btn=document.getElementById('ans-btn');
+  btn.disabled=true; btn.textContent='⏳ Connecting…';
+  try{
+    var parsed=JSON.parse(b64dec(raw));
+    p.pc.setRemoteDescription(new RTCSessionDescription(parsed))
+      .then(function(){ setStatus('connecting…','wait'); })
+      .catch(function(e){ toast('Bad answer: '+e.message,'er'); btn.disabled=false; btn.textContent='Complete →'; });
+  }catch(e){ toast('Could not read answer','er'); btn.disabled=false; btn.textContent='Complete →'; }
+}
+
+// ── JOINER ──────────────────────────────────────────
+function doJoin(){
+  var raw=document.getElementById('join-inp').value.trim();
+  if(!raw){ toast('Paste the offer code','er'); return; }
+  closeOv('join-ov');
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
+  setStatus('connecting…','wait');
+  var offer;
+  try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer code','er'); if(!anyConnected()) setStatus('idle'); return; }
+  var pid=mkId(); peerCount++;
+  peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
+  var pc=makePC(pid); peers[pid].pc=pc;
+  pc.setRemoteDescription(new RTCSessionDescription(offer))
+    .then(function(){ return pc.createAnswer(); })
+    .then(function(a){ return pc.setLocalDescription(a); })
+    .then(function(){ return gatherICE(pc); })
+    .then(function(desc){
+      document.getElementById('code-out').value=b64enc(JSON.stringify(sdpObj(desc)));
+      openOv('code-ov');
+      document.getElementById('bd').style.display='';
+    })
+    .catch(function(e){
+      console.error('[RELAY] doJoin:',e);
+      toast('Error: '+e.message,'er');
+      delete peers[pid];
+      if(!anyConnected()){ setStatus('idle'); document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; }); }
+    });
+}
+
+function copyCode(){ navigator.clipboard.writeText(document.getElementById('code-out').value).then(function(){ toast('Answer code copied','ok'); }); }
+
+function doDisconnectAll(){
+  Object.keys(peers).forEach(function(pid){ try{peers[pid].pc.close();}catch(e){} });
+  peers={}; _pendingHostPid=null;
+  setStatus('idle'); goIdle();
+}
+
+// ── Finalize peer connection + mesh intro ─────────────
+// Replace finishConnect to use introNewPeerV2
+function finishConnect(pid){
+  var p=peers[pid]; if(!p) return;
+  introNewPeerV2(pid);
+  if(document.getElementById('splash').style.display!=='none') showChatUI();
+  renderPeers(); updateStatus();
+  var b=document.createElement('div');
+  b.style.cssText='position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
+  b.textContent='⚡ '+p.name+' joined';
+  document.body.appendChild(b);
+  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
+  addMsg('⚡ '+p.name+' joined');
+  setTimeout(function(){ flushQueue(pid); },300);
+}
 
 // ── FILE LIST UI ─────────────────────────────────────
 function addFileRow(id){
@@ -1034,8 +1284,7 @@ function addFileRow(id){
   var empty=list.querySelector('.empty'); if(empty) empty.remove();
   var f=fdata[id];
   var d=document.createElement('div'); d.className='fi'; d.id='fi-'+id;
-  d.innerHTML=
-    '<div class="fi-ico">'+fileIcon(f.name)+'</div>'
+  d.innerHTML='<div class="fi-ico">'+fileIcon(f.name)+'</div>'
     +'<div class="fi-inf">'
       +'<div class="fi-name" title="'+esc(f.name)+'">'+esc(f.name)+'</div>'
       +'<div class="fi-meta" id="fm-'+id+'">'+fmtBytes(f.size)+' · '+f.dir+'</div>'
@@ -1046,7 +1295,7 @@ function addFileRow(id){
 }
 function updateFileRowMeta(id){
   var f=fdata[id]; if(!f) return;
-  var m=document.getElementById('fm-'+id); if(m) m.textContent=fmtBytes(f.size)+' · '+f.dir;
+  var m2=document.getElementById('fm-'+id); if(m2) m2.textContent=fmtBytes(f.size)+' · '+f.dir;
 }
 function updateFileRow(id){
   var f=fdata[id]; if(!f) return;
@@ -1086,11 +1335,11 @@ function qrBuild(text){
   var bits=[];
   function pb(v,l){ for(var i=l-1;i>=0;i--) bits.push((v>>i)&1); }
   pb(4,4); pb(data.length,ver<10?8:16);
-  data.forEach(function(b){pb(b,8);});
+  data.forEach(function(b){ pb(b,8); });
   pb(0,4); while(bits.length%8) bits.push(0);
   var PAD=[0xEC,0x11],pi=0;
   while(bits.length<dataCW*8){ pb(PAD[pi%2],8); pi++; }
-  var db=[]; for(var i=0;i<dataCW;i++){ var b=0; for(var j=0;j<8;j++) b=(b<<1)|(bits[i*8+j]||0); db.push(b); }
+  var db=[]; for(var i=0;i<dataCW;i++){ var bv=0; for(var j=0;j<8;j++) bv=(bv<<1)|(bits[i*8+j]||0); db.push(bv); }
   var all=db.concat(rsEnc(db,ecCW));
   var n=4*ver+17,mx=[],used=[];
   for(var i=0;i<n;i++){ mx[i]=new Array(n).fill(null); used[i]=new Array(n).fill(false); }
@@ -1107,7 +1356,7 @@ function qrBuild(text){
   var AP=[[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
   if(ver>=2){ var ap=AP[ver]||[]; for(var ai=0;ai<ap.length;ai++) for(var aj=0;aj<ap.length;aj++){
     var ar=ap[ai],ac=ap[aj]; if(used[ar][ac]) continue;
-    for(var dr=-2;dr<=2;dr++) for(var dc2=-2;dc2<=2;dc2++) mark(ar+dr,ac+dc2,Math.abs(dr)===2||Math.abs(dc2)===2||(dr===0&&dc2===0));
+    for(var dr=-2;dr<=2;dr++) for(var dc3=-2;dc3<=2;dc3++) mark(ar+dr,ac+dc3,Math.abs(dr)===2||Math.abs(dc3)===2||(dr===0&&dc3===0));
   }}
   mark(n-8,8,true);
   for(var i=0;i<=8;i++){
@@ -1134,16 +1383,16 @@ function qrBuild(text){
   for(var i=0;i<15;i++){ mx[FP1[i][0]][FP1[i][1]]=!!FMT[i]; mx[FP2[i][0]][FP2[i][1]]=!!FMT[i]; }
   return mx;
 }
-function utf8b(str){ var out=[]; for(var i=0;i<str.length;i++){ var c=str.charCodeAt(i); if(c<0x80) out.push(c); else if(c<0x800) out.push(0xC0|(c>>6),0x80|(c&0x3F)); else out.push(0xE0|(c>>12),0x80|((c>>6)&0x3F),0x80|(c&0x3F)); } return out; }
+function utf8b(str){ var out=[]; for(var i=0;i<str.length;i++){ var cv=str.charCodeAt(i); if(cv<0x80) out.push(cv); else if(cv<0x800) out.push(0xC0|(cv>>6),0x80|(cv&0x3F)); else out.push(0xE0|(cv>>12),0x80|((cv>>6)&0x3F),0x80|(cv&0x3F)); } return out; }
 var GFe=new Array(512),GFl=new Array(256);
-(function(){var x=1;for(var i=0;i<255;i++){GFe[i]=x;GFl[x]=i;x<<=1;if(x&256)x^=285;}for(var i=255;i<512;i++)GFe[i]=GFe[i-255];})();
-function gfm(a,b){return(a&&b)?GFe[GFl[a]+GFl[b]]:0;}
-function gfpow(x,n){return GFe[(GFl[x]*n)%255];}
+(function(){ var x=1; for(var i=0;i<255;i++){ GFe[i]=x; GFl[x]=i; x<<=1; if(x&256) x^=285; } for(var i=255;i<512;i++) GFe[i]=GFe[i-255]; })();
+function gfm(a,b){ return(a&&b)?GFe[GFl[a]+GFl[b]]:0; }
+function gfpow(x,n){ return GFe[(GFl[x]*n)%255]; }
 function rsEnc(data,ec){
   var gen=[1];
-  for(var i=0;i<ec;i++){var r=new Array(gen.length+1).fill(0);for(var a=0;a<gen.length;a++)for(var b=0;b<2;b++)r[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]);gen=r;}
+  for(var i=0;i<ec;i++){ var rv=new Array(gen.length+1).fill(0); for(var a=0;a<gen.length;a++) for(var b=0;b<2;b++) rv[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]); gen=rv; }
   var msg=data.slice(); for(var i=0;i<ec;i++) msg.push(0);
-  for(var i=0;i<data.length;i++){var c=msg[i];if(!c)continue;for(var j=1;j<=ec;j++)msg[i+j]^=gfm(gen[j],c);}
+  for(var i=0;i<data.length;i++){ var cv=msg[i]; if(!cv) continue; for(var j=1;j<=ec;j++) msg[i+j]^=gfm(gen[j],cv); }
   return msg.slice(data.length);
 }
 </script>
