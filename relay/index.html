@@ -7,256 +7,234 @@
 <title>RELAY — P2P File &amp; Chat</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
-/* iOS safe-area + dynamic viewport */
-:root{
-–vh:1svh;
-–safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
+:root{ --safe-b:env(safe-area-inset-bottom,0px); }
 html,body{
-height:100%;
-background:#0d0d0d;
-color:#e8e8e8;
-font-family:ui-monospace,Menlo,Consolas,monospace;
-font-size:13px;
-line-height:1.6;
-overflow:hidden;
-/* prevent iOS bounce scroll */
-overscroll-behavior:none;
--webkit-text-size-adjust:100%;
+  height:100%; background:#0d0d0d; color:#e8e8e8;
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:13px; line-height:1.6; overflow:hidden;
+  overscroll-behavior:none; -webkit-text-size-adjust:100%;
 }
+#app{ display:flex; flex-direction:column; height:100dvh; }
 
-#app{
-display:flex;
-flex-direction:column;
-/* Use dvh so iOS safari toolbar is accounted for */
-height:100dvh;
-height:calc(var(–vh,1svh)*100);
-}
-
-/* ── HEADER ── */
+/* HEADER */
 header{
 display:flex;align-items:center;justify-content:space-between;
-padding:0 16px;height:48px;
-border-bottom:1px solid #1e1e1e;
-background:#111;flex-shrink:0;gap:12px;
-/* iOS notch */
-padding-left:max(16px,env(safe-area-inset-left));
-padding-right:max(16px,env(safe-area-inset-right));
+padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));
+height:48px; border-bottom:1px solid #1a1a1a; background:#111; flex-shrink:0; gap:10px;
 }
 .logo{font-size:15px;font-weight:700;letter-spacing:.2em;color:#00ff88;white-space:nowrap}
-.logo-sub{font-size:10px;color:#333;margin-left:8px;font-weight:400}
-.pill{display:flex;align-items:center;gap:6px;font-size:11px;color:#555;background:#191919;border:1px solid #222;padding:3px 10px;border-radius:20px;white-space:nowrap}
-.dot{width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0;transition:background .3s}
+.logo-sub{font-size:10px;color:#2a2a2a;margin-left:6px;font-weight:400}
+.pill{display:flex;align-items:center;gap:6px;font-size:11px;color:#444;
+background:#191919;border:1px solid #1e1e1e;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;background:#2a2a2a;flex-shrink:0;transition:background .3s}
 .dot.on{background:#00ff88;box-shadow:0 0 6px #00ff88;animation:pulse 2s infinite}
 .dot.wait{background:#ffaa00;animation:pulse .8s infinite}
 .dot.err{background:#ff4444}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* ── MAIN ── */
+/* LAYOUT */
 main{display:flex;flex:1;overflow:hidden;min-height:0}
 
-/* ── SIDEBAR ── */
+/* SIDEBAR */
 #sidebar{
-width:260px;flex-shrink:0;
-border-right:1px solid #1e1e1e;
-display:flex;flex-direction:column;
-background:#111;
-overflow-y:auto;
-transition:transform .25s ease,width .25s ease;
+width:260px;flex-shrink:0;border-right:1px solid #1a1a1a;
+display:flex;flex-direction:column;background:#111;overflow-y:auto;
 }
 #sidebar::-webkit-scrollbar{width:3px}
-#sidebar::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+#sidebar::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+.sec{padding:14px 16px;border-bottom:1px solid #161616}
+.sec-lbl{font-size:9px;letter-spacing:.2em;color:#2a2a2a;text-transform:uppercase;margin-bottom:10px;font-weight:600}
 
-.sec{padding:14px 16px;border-bottom:1px solid #1a1a1a}
-.sec-lbl{font-size:9px;letter-spacing:.2em;color:#333;text-transform:uppercase;margin-bottom:10px;font-weight:600}
-
-/* ── BUTTONS ── */
+/* BUTTONS */
 .btn{
-display:inline-flex;align-items:center;justify-content:center;gap:7px;
-padding:9px 14px;border:1px solid #272727;background:#181818;color:#ccc;
+display:inline-flex;align-items:center;justify-content:center;gap:6px;
+padding:9px 14px;border:1px solid #252525;background:#181818;color:#bbb;
 font-family:inherit;font-size:12px;cursor:pointer;border-radius:4px;
-transition:all .15s;white-space:nowrap;
-/* better touch targets on mobile */
-min-height:40px;
--webkit-tap-highlight-color:transparent;
-user-select:none;
+transition:all .15s;white-space:nowrap;min-height:40px;
+-webkit-tap-highlight-color:transparent;user-select:none;
 }
 .btn:hover{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.06)}
-.btn:active{transform:scale(.97);opacity:.85}
+.btn:active{transform:scale(.97)}
 .btn.primary{background:#00ff88;color:#000;border-color:#00ff88;font-weight:700}
 .btn.primary:hover{background:#00e87a;border-color:#00e87a}
-.btn.ghost{border-color:#ff4444;color:#ff4444;background:transparent}
-.btn.ghost:hover{background:rgba(255,68,68,.08)}
+.btn.danger{border-color:#ff4444;color:#ff4444;background:transparent}
+.btn.danger:hover{background:rgba(255,68,68,.08)}
 .btn.full{width:100%}
 .btn:disabled{opacity:.25;cursor:not-allowed;pointer-events:none}
 
-/* ── INPUTS ── */
+/* INPUTS */
 .inp{
-width:100%;background:#141414;border:1px solid #252525;color:#e8e8e8;
-font-family:inherit;font-size:16px;/* 16px prevents iOS zoom on focus */
-padding:9px 11px;border-radius:4px;outline:none;transition:border-color .15s;
+width:100%;background:#141414;border:1px solid #202020;color:#e8e8e8;
+font-family:inherit;font-size:16px;padding:9px 11px;border-radius:4px;
+outline:none;transition:border-color .15s;
 }
 .inp:focus{border-color:#00ff88}
-.inp::placeholder{color:#333}
-textarea.inp{resize:none;font-size:16px}
+.inp::placeholder{color:#2a2a2a}
+textarea.inp{resize:none}
 
-/* ── SHARE PANEL ── */
+/* SHARE PANEL */
 #share-sec{display:none}
 #qr-wrap{background:#fff;display:inline-block;padding:10px;border-radius:6px;line-height:0}
-.qr-caption{font-size:10px;color:#383838;text-align:center;margin:8px 0 6px}
+.qr-caption{font-size:10px;color:#333;text-align:center;margin:7px 0 5px}
 .copy-row{display:flex;gap:6px;width:100%}
-.copy-val{
-flex:1;min-width:0;background:#141414;border:1px solid #222;color:#555;
+.copy-val{flex:1;min-width:0;background:#141414;border:1px solid #1e1e1e;color:#444;
 font-family:inherit;font-size:10px;padding:7px 9px;border-radius:4px;
-white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
-}
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .copy-val:hover{border-color:#00ff88;color:#00ff88}
 
-/* ── FILE DROP ── */
+/* FILE SECTIONS */
 #drop-sec{display:none}
-#dz{
-border:1px dashed #252525;border-radius:6px;padding:18px 14px;
-text-align:center;color:#383838;font-size:11px;cursor:pointer;
-transition:all .15s;position:relative;
-}
+#dz{border:1px dashed #222;border-radius:6px;padding:16px 14px;
+text-align:center;color:#333;font-size:11px;cursor:pointer;
+transition:all .15s;position:relative}
 #dz:hover,#dz.over{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.04)}
 #dz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-#dz-icon{font-size:22px;display:block;margin-bottom:5px}
-
-/* ── FILE LIST ── */
 #files-sec{display:none;flex:1;min-height:0}
 #flist{display:flex;flex-direction:column;gap:5px}
-.fi{background:#141414;border:1px solid #1e1e1e;border-radius:4px;padding:9px 10px;display:flex;align-items:center;gap:9px}
+.fi{background:#141414;border:1px solid #1a1a1a;border-radius:4px;padding:9px 10px;display:flex;align-items:center;gap:8px}
 .fi-ico{font-size:16px;flex-shrink:0;line-height:1}
 .fi-inf{flex:1;min-width:0}
 .fi-name{color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
-.fi-meta{color:#383838;font-size:10px;margin-top:1px}
-.fi-bar{height:2px;background:#1e1e1e;border-radius:1px;margin-top:5px;overflow:hidden}
-.fi-fill{height:100%;background:#00ff88;border-radius:1px;transition:width .15s}
-.fi-dl{padding:5px 10px;font-size:11px;flex-shrink:0;min-height:32px}
-.empty{color:#2e2e2e;font-size:11px;text-align:center;padding:14px;border:1px dashed #1e1e1e;border-radius:4px}
+.fi-meta{color:#333;font-size:10px;margin-top:1px}
+.fi-bar{height:2px;background:#1e1e1e;border-radius:1px;margin-top:4px;overflow:hidden}
+.fi-fill{height:100%;background:#00ff88;border-radius:1px;transition:width .12s}
+.fi-act{flex-shrink:0;display:flex;gap:4px}
+.empty{color:#252525;font-size:11px;text-align:center;padding:14px;border:1px dashed #1a1a1a;border-radius:4px}
 
-/* ── CONTENT AREA ── */
+/* CONTENT */
 #content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;background:#0d0d0d}
 
-/* ── SPLASH ── */
-#splash{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 24px;overflow-y:auto}
-.splash-wrap{max-width:440px;width:100%;display:flex;flex-direction:column;align-items:center;text-align:center}
-.splash-logo{font-size:48px;font-weight:700;letter-spacing:.22em;color:#00ff88;line-height:1;margin-bottom:4px}
-.splash-tag{font-size:11px;color:#2e2e2e;letter-spacing:.14em;text-transform:uppercase;margin-bottom:36px}
-.steps{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%}
-.step{background:#111;border:1px solid #1a1a1a;border-radius:6px;padding:14px;text-align:left}
-.step-n{font-size:9px;color:#00ff88;opacity:.5;letter-spacing:.12em;margin-bottom:5px}
-.step-title{font-size:12px;color:#888;font-weight:500;margin-bottom:2px}
-.step-desc{font-size:11px;color:#2e2e2e;line-height:1.5}
+/* ── SPLASH — with big drop zone ── */
+#splash{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;gap:24px}
 
-/* ── CHAT ── */
+/* Quick-send drop zone (shown on splash) */
+#quick-drop{
+width:100%;max-width:480px;
+border:2px dashed #222;border-radius:12px;
+padding:40px 24px;text-align:center;cursor:pointer;
+transition:all .2s;position:relative;
+background:#111;
+}
+#quick-drop:hover,#quick-drop.over{
+border-color:#00ff88;background:rgba(0,255,136,.04);
+}
+#quick-drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+#quick-drop.over *{pointer-events:none}
+.qd-icon{font-size:48px;display:block;margin-bottom:12px;line-height:1}
+.qd-title{font-size:18px;font-weight:700;color:#e8e8e8;margin-bottom:6px}
+.qd-sub{font-size:12px;color:#333;margin-bottom:20px}
+.qd-or{font-size:11px;color:#252525;margin:12px 0}
+
+/* Queued file chips */
+#queued-files{display:none;flex-direction:column;gap:8px;width:100%;max-width:480px}
+#queued-files .qf-item{
+background:#111;border:1px solid #1e1e1e;border-radius:6px;
+padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
+}
+#queued-files .qf-icon{font-size:18px}
+#queued-files .qf-name{flex:1;min-width:0;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#queued-files .qf-size{color:#333;font-size:11px;flex-shrink:0}
+#queued-files .qf-rm{background:none;border:none;color:#333;cursor:pointer;font-size:14px;padding:2px 4px;border-radius:2px}
+#queued-files .qf-rm:hover{color:#ff4444}
+#queued-status{font-size:11px;color:#444;text-align:center;width:100%;max-width:480px}
+
+/* Splash info steps */
+.splash-steps{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:480px}
+.step{background:#111;border:1px solid #161616;border-radius:6px;padding:12px;text-align:left}
+.step-n{font-size:9px;color:#00ff88;opacity:.5;letter-spacing:.12em;margin-bottom:4px}
+.step-title{font-size:11px;color:#666;font-weight:500;margin-bottom:2px}
+.step-desc{font-size:10px;color:#252525;line-height:1.5}
+
+/* CHAT */
 #chat{flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0}
 #msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:3px;min-height:0;-webkit-overflow-scrolling:touch}
 #msgs::-webkit-scrollbar{width:3px}
-#msgs::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
-.msg{display:flex;flex-direction:column;max-width:78%;animation:msgIn .12s ease}
-@keyframes msgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+#msgs::-webkit-scrollbar-thumb{background:#1e1e1e;border-radius:2px}
+.msg{display:flex;flex-direction:column;max-width:80%;animation:mIn .12s ease}
+@keyframes mIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .msg.me{align-self:flex-end;align-items:flex-end}
 .msg.them{align-self:flex-start;align-items:flex-start}
 .msg.sys{align-self:center;align-items:center;max-width:100%}
 .bubble{padding:8px 12px;border-radius:4px;font-size:14px;line-height:1.45;word-break:break-word}
-.me .bubble{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.2);color:#e8e8e8}
+.me .bubble{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.18);color:#e8e8e8}
 .them .bubble{background:#161616;border:1px solid #1e1e1e;color:#e8e8e8}
 .sys .bubble{background:transparent;border:none;color:#2a2a2a;font-size:11px}
-.ts{font-size:10px;color:#252525;margin-top:2px;padding:0 3px}
+.ts{font-size:10px;color:#222;margin-top:2px;padding:0 3px}
 
-/* Chat input bar — must sit above iOS keyboard */
+/* Accept/decline notification bubble */
+.fi-request{
+align-self:flex-start;width:min(340px,90%);
+background:#161616;border:1px solid #252525;border-radius:8px;
+padding:12px 14px;animation:mIn .15s ease;
+}
+.fi-req-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.fi-req-icon{font-size:22px;flex-shrink:0}
+.fi-req-name{font-size:13px;color:#ccc;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.fi-req-size{font-size:11px;color:#333;margin-top:1px}
+.fi-req-btns{display:flex;gap:8px}
+.fi-req-btns .btn{flex:1;font-size:12px;padding:8px}
+
 #ci-bar{
-border-top:1px solid #1a1a1a;
-padding:10px 12px;
-padding-bottom:max(10px, var(–safe-bottom));
+border-top:1px solid #161616;padding:10px 12px;
+padding-bottom:max(10px,var(–safe-b));
 display:flex;gap:8px;align-items:flex-end;
 background:#111;flex-shrink:0;
 }
-#ci{
-flex:1;resize:none;
-min-height:38px;max-height:120px;
-overflow-y:auto;line-height:1.45;
-font-size:16px;/* critical: prevents iOS zoom */
-padding:9px 11px;
-}
-#ci-attach{font-size:18px;padding:8px 10px;min-height:38px;background:transparent;border-color:#222}
-#ci-attach:hover{border-color:#00ff88;color:#00ff88}
-
-/* Attach file input */
+#ci{flex:1;resize:none;min-height:38px;max-height:120px;overflow-y:auto;line-height:1.45;font-size:16px;padding:9px 11px;}
 #ci-file{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
 
-/* ── MOBILE SIDEBAR TOGGLE ── */
-#sidebar-toggle{
-display:none;
-padding:6px 10px;font-size:16px;
-background:transparent;border:1px solid #222;
-color:#555;cursor:pointer;border-radius:4px;min-height:34px;
--webkit-tap-highlight-color:transparent;
-}
-#sidebar-toggle:hover{color:#00ff88;border-color:#00ff88}
+/* MOBILE SIDEBAR TOGGLE */
+#sb-toggle{display:none;padding:6px 10px;font-size:16px;background:transparent;
+border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
+-webkit-tap-highlight-color:transparent}
+#sb-toggle:hover{color:#00ff88;border-color:#00ff88}
 
-/* ── MODALS ── */
+/* MODALS */
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:flex-end;justify-content:center;padding:0}
 .ov.open{display:flex}
-/* slide up sheet on mobile */
-.modal{
-background:#111;border:1px solid #252525;border-radius:12px 12px 0 0;
-padding:24px;width:100%;max-width:480px;
-box-shadow:0 -8px 40px rgba(0,0,0,.6);
-max-height:92dvh;overflow-y:auto;
-padding-bottom:max(24px,var(–safe-bottom));
-}
-@media(min-width:540px){
-.ov{align-items:center;padding:16px}
-.modal{border-radius:10px;max-height:88dvh}
-}
+.modal{background:#111;border:1px solid #222;border-radius:14px 14px 0 0;padding:24px;width:100%;max-width:480px;
+box-shadow:0 -8px 40px rgba(0,0,0,.6);max-height:92dvh;overflow-y:auto;
+padding-bottom:max(24px,var(–safe-b))}
+@media(min-width:540px){.ov{align-items:center;padding:16px}.modal{border-radius:10px;max-height:88dvh}}
 .modal-title{font-size:16px;font-weight:700;color:#e8e8e8;margin-bottom:6px}
 .modal-sub{font-size:12px;color:#444;margin-bottom:18px;line-height:1.6}
 .modal-sub strong{color:#00ff88}
 .modal-field{margin-bottom:14px}
-.modal-lbl{font-size:10px;color:#333;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
-.modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;border-top:1px solid #1a1a1a;padding-top:16px}
-hr.divider{border:none;border-top:1px solid #1a1a1a;margin:14px 0}
+.modal-lbl{font-size:10px;color:#2a2a2a;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;border-top:1px solid #161616;padding-top:16px}
+hr.div{border:none;border-top:1px solid #161616;margin:14px 0}
 
-/* ── TOAST ── */
-#toast{
-position:fixed;bottom:max(20px,var(–safe-bottom));left:50%;transform:translateX(-50%) translateY(12px);
-background:#161616;border:1px solid #252525;color:#ccc;
-padding:10px 18px;border-radius:20px;font-size:12px;z-index:200;
-opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
-box-shadow:0 4px 16px rgba(0,0,0,.5);
-}
+/* TOAST */
+#toast{position:fixed;bottom:max(20px,var(–safe-b));left:50%;transform:translateX(-50%) translateY(12px);
+background:#161616;border:1px solid #222;color:#ccc;padding:10px 18px;border-radius:20px;
+font-size:12px;z-index:200;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
+box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#toast.ok{border-color:rgba(0,255,136,.4);color:#00ff88}
-#toast.er{border-color:rgba(255,68,68,.4);color:#ff6666}
+#toast.ok{border-color:rgba(0,255,136,.35);color:#00ff88}
+#toast.er{border-color:rgba(255,68,68,.35);color:#ff6666}
 
-/* ── MOBILE ── */
+/* MOBILE */
 @media(max-width:600px){
-/* On mobile: sidebar sits above content, collapses when connected */
 main{flex-direction:column}
-
-#sidebar{
-width:100%;
-border-right:none;
-border-bottom:1px solid #1e1e1e;
-/* collapsed: just tall enough for connection buttons */
-max-height:200px;
-overflow-y:auto;
-}
+#sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
 #sidebar.expanded{max-height:60dvh}
 #sidebar.hidden{display:none}
-
-#sidebar-toggle{display:flex}
-
-.steps{grid-template-columns:1fr}
-
-/* Bigger touch targets on mobile */
+#sb-toggle{display:flex}
 .btn{min-height:44px}
+.splash-steps{grid-template-columns:1fr}
 }
+
+/* PEERS LIST */
+.peer-item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #161616;font-size:12px}
+.peer-item:last-child{border-bottom:none}
+.peer-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#00ff88;box-shadow:0 0 5px #00ff88;animation:pulse 2s infinite}
+.peer-dot.dead{background:#ff4444;box-shadow:none;animation:none}
+.peer-name{flex:1;color:#ccc;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.peer-kick{background:none;border:none;color:#2a2a2a;cursor:pointer;font-size:12px;padding:2px 5px;border-radius:2px;-webkit-tap-highlight-color:transparent}
+.peer-kick:hover{color:#ff4444}
+
+/* Chat peer label */
+.from-lbl{font-size:10px;color:#333;margin-bottom:2px;padding:0 3px}
 </style>
 
 </head>
@@ -264,7 +242,7 @@ overflow-y:auto;
 <div id="app">
   <header>
     <div style="display:flex;align-items:center;gap:8px">
-      <button id="sidebar-toggle" onclick="toggleSidebar()" title="Files &amp; Settings">☰</button>
+      <button id="sb-toggle" onclick="toggleSidebar()">☰</button>
       <span class="logo">RELAY</span>
       <span class="logo-sub">p2p · no server</span>
     </div>
@@ -272,25 +250,31 @@ overflow-y:auto;
   </header>
 
   <main>
-    <!-- ── SIDEBAR ── -->
     <div id="sidebar">
+      <div class="sec" id="conn-sec">
+        <div class="sec-lbl">Connection</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <!-- bh/bj hidden; managed by splash buttons. bd shown when connected. -->
+          <button class="btn primary full" id="bh" onclick="startHost()" style="display:none">⊕ Create Session</button>
+          <button class="btn full" id="bj" onclick="openOv('join-ov')" style="display:none">↗ Join Session</button>
+          <button class="btn danger full" id="bd" onclick="doDisconnectAll()" style="display:none">✕ Disconnect All</button>
+          <div id="conn-idle-hint" style="font-size:10px;color:#2a2a2a;text-align:center;padding:6px 0">use the main area to connect</div>
+        </div>
+      </div>
 
 ```
-  <div class="sec">
-    <div class="sec-lbl">Connection</div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <button class="btn primary full" id="bh" onclick="startHost()">⊕ Create Session</button>
-      <button class="btn full" id="bj" onclick="openOv('join-ov')">↗ Join Session</button>
-      <button class="btn ghost full" id="bd" onclick="doDisconnect()" style="display:none">✕ Disconnect</button>
-    </div>
+  <!-- Peers list (shown when ≥1 connected) -->
+  <div class="sec" id="peers-sec" style="display:none">
+    <div class="sec-lbl">Peers</div>
+    <div id="peers-list"></div>
+    <button class="btn full" style="margin-top:8px;font-size:11px" onclick="addPeer()">⊕ Add Peer</button>
   </div>
 
-  <!-- QR + page link (host only, pre-connection) -->
   <div class="sec" id="share-sec">
     <div class="sec-lbl">Share page with peer</div>
     <div style="display:flex;flex-direction:column;align-items:center">
       <div id="qr-wrap"></div>
-      <div class="qr-caption">scan to open RELAY on peer's device</div>
+      <div class="qr-caption">scan to open on peer's device</div>
       <div class="copy-row">
         <div class="copy-val" id="page-url-el" onclick="copyPageUrl()">—</div>
         <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyPageUrl()">copy</button>
@@ -298,63 +282,84 @@ overflow-y:auto;
     </div>
   </div>
 
-  <!-- File drop (connected) -->
   <div class="sec" id="drop-sec">
     <div class="sec-lbl">Send Files</div>
+    <div style="margin-bottom:8px;display:none" id="peer-target-wrap">
+      <div class="sec-lbl" style="margin-bottom:4px">To</div>
+      <select class="inp" id="peer-target" style="font-size:12px;padding:6px 8px;cursor:pointer">
+        <option value="all">Everyone</option>
+      </select>
+    </div>
     <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
-      <input type="file" multiple onchange="dzPick(event)" id="dz-input">
-      <span id="dz-icon">⊞</span>
-      drop files or tap to pick
+      <input type="file" multiple onchange="dzPick(event)">
+      <div style="font-size:20px;margin-bottom:4px">⊞</div>
+      drop or tap to pick
     </div>
   </div>
 
-  <!-- File list (always visible once connected) -->
   <div class="sec" id="files-sec" style="flex:1">
     <div class="sec-lbl">Files</div>
     <div id="flist"><div class="empty">no files yet</div></div>
   </div>
+</div>
 
-</div><!-- /sidebar -->
-
-<!-- ── CONTENT ── -->
 <div id="content">
-
-  <!-- Splash -->
+  <!-- SPLASH with quick-send drop zone -->
   <div id="splash">
-    <div class="splash-wrap">
-      <div class="splash-logo">RELAY</div>
-      <div class="splash-tag">peer-to-peer · no server · no logs</div>
-      <div class="steps">
-        <div class="step"><div class="step-n">STEP 01</div><div class="step-title">Create</div><div class="step-desc">Click Create Session to get your offer code and a QR for this page.</div></div>
-        <div class="step"><div class="step-n">STEP 02</div><div class="step-title">Share</div><div class="step-desc">Send your offer code to peer via any channel.</div></div>
-        <div class="step"><div class="step-n">STEP 03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste it here and copy their answer code back to you.</div></div>
-        <div class="step"><div class="step-n">STEP 04</div><div class="step-title">Connected</div><div class="step-desc">Paste their answer to complete. Chat and send files P2P.</div></div>
-      </div>
+
+    <!-- Big drag-drop / send area -->
+    <div id="quick-drop"
+      ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
+      <input type="file" multiple id="qd-input" onchange="qdPick(event)">
+      <span class="qd-icon">📤</span>
+      <div class="qd-title">Drop files to send</div>
+      <div class="qd-sub">Files will be queued and sent once your peer connects</div>
+      <button class="btn primary" style="pointer-events:auto;position:relative;z-index:1" onclick="qdBrowse(event)">Choose Files</button>
+    </div>
+
+    <!-- Manual connect strip below the drop zone -->
+    <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
+      <div style="flex:1;height:1px;background:#1a1a1a"></div>
+      <span style="font-size:10px;color:#2a2a2a;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
+      <div style="flex:1;height:1px;background:#1a1a1a"></div>
+    </div>
+    <div style="display:flex;gap:8px;width:100%;max-width:480px">
+      <button class="btn full" onclick="startHost()">⊕ Create Session</button>
+      <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
+    </div>
+
+    <!-- Queued file list (shown once files picked pre-connection) -->
+    <div id="queued-files"></div>
+    <div id="queued-status"></div>
+
+    <!-- How it works (collapsed by default on small screens) -->
+    <div class="splash-steps">
+      <div class="step"><div class="step-n">01</div><div class="step-title">Drop or pick files</div><div class="step-desc">Drop files above to auto-create a session and queue them for sending.</div></div>
+      <div class="step"><div class="step-n">02</div><div class="step-title">Share offer code</div><div class="step-desc">Send the offer code to your peer via any channel.</div></div>
+      <div class="step"><div class="step-n">03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste the code and accept incoming files.</div></div>
+      <div class="step"><div class="step-n">04</div><div class="step-title">Connected</div><div class="step-desc">Files transfer directly — nothing touches a server.</div></div>
     </div>
   </div>
 
-  <!-- Chat (shown once connected) -->
+  <!-- CHAT (post-connection) -->
   <div id="chat">
     <div id="msgs"></div>
     <div id="ci-bar">
-      <!-- Hidden file input triggered by attach button -->
       <input type="file" id="ci-file" multiple onchange="ciFilePick(event)">
-      <button class="btn" id="ci-attach" onclick="document.getElementById('ci-file').click()" title="Attach file">📎</button>
+      <button class="btn" style="padding:8px 10px;background:transparent;border-color:#1e1e1e;font-size:17px"
+        onclick="document.getElementById('ci-file').click()" title="Attach file">📎</button>
       <textarea class="inp" id="ci" placeholder="Message…" rows="1"
         onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
-      <button class="btn primary" id="ci-send" onclick="sendChat()">↑</button>
+      <button class="btn primary" style="padding:8px 12px" onclick="sendChat()">↑</button>
     </div>
   </div>
-
-</div><!-- /content -->
+</div>
 ```
 
   </main>
 </div>
 
-<!-- ── MODALS ── -->
-
-<!-- Join: paste offer code -->
+<!-- MODALS -->
 
 <div class="ov" id="join-ov">
   <div class="modal">
@@ -371,18 +376,16 @@ overflow-y:auto;
   </div>
 </div>
 
-<!-- Host: show offer code + accept answer -->
-
 <div class="ov" id="host-ov">
   <div class="modal">
     <div class="modal-title">Session Ready</div>
-    <div class="modal-sub">Send your <strong>offer code</strong> to peer. Once they join, paste their <strong>answer code</strong> below.</div>
+    <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
     <div class="modal-field">
-      <div class="modal-lbl">Your Offer Code — send to peer</div>
+      <div class="modal-lbl">Your Offer Code</div>
       <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
       <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
     </div>
-    <hr class="divider">
+    <hr class="div">
     <div class="modal-field" style="margin-bottom:0">
       <div class="modal-lbl">Paste Answer Code from peer</div>
       <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
@@ -394,12 +397,10 @@ overflow-y:auto;
   </div>
 </div>
 
-<!-- Joiner: show answer code -->
-
 <div class="ov" id="code-ov">
   <div class="modal">
     <div class="modal-title">Almost there!</div>
-    <div class="modal-sub">Copy your <strong>answer code</strong> and send it back to the host. You'll connect automatically once they paste it.</div>
+    <div class="modal-sub">Copy your <strong>answer code</strong> and send it to the host.</div>
     <div class="modal-field" style="margin-bottom:0">
       <div class="modal-lbl">Your Answer Code</div>
       <textarea class="inp" id="code-out" rows="5" readonly onclick="this.select()"></textarea>
@@ -414,13 +415,33 @@ overflow-y:auto;
 <div id="toast"></div>
 
 <script>
-// ─────────────────────────────────────────────────────────
-//  RELAY — serverless WebRTC P2P
-// ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+//  RELAY — multi-peer serverless WebRTC
+//  Protocol messages (JSON over DataChannel):
+//    chat  — text message
+//    fa    — file announce  (sender asks receiver to accept)
+//    fr    — file accept    (receiver → sender)
+//    fd    — file decline   (receiver → sender)
+//    fs    — file start     (sender → receiver, metadata)
+//    fe    — file end       (sender → receiver, done)
+//  Binary frames: [36-byte transfer-ID][chunk bytes]
+// ─────────────────────────────────────────────────────
 
 var CHUNK = 64 * 1024;
-var pc = null, dc = null;
-var transfers = {}, fdata = {};
+
+// peers[pid] = { pc, dc, name, num }
+var peers = {};
+var peerCount = 0; // ever-incrementing for naming
+
+// per-transfer state
+var transfers   = {}; // ftid → { pid, name, size, mime, chunks[], got }
+var fdata       = {}; // ftid → { name, size, dir, pct, blob? }
+var pendingSend = {}; // ftid → { file, pid }
+
+var queuedFiles = []; // File[] queued before any connection
+
+// a single pending-host PC while waiting for an answer
+var hostPC = null;
 
 var ICE = {iceServers:[
   {urls:'stun:stun.l.google.com:19302'},
@@ -428,567 +449,650 @@ var ICE = {iceServers:[
   {urls:'stun:stun.cloudflare.com:3478'}
 ]};
 
-// ── iOS viewport height fix ────────────────────────────
-// Keep --vh updated as Safari toolbar appears/disappears
+// ── iOS viewport ────────────────────────────────────
 function setVH(){
-  var vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.documentElement.style.setProperty('--vh', (vh * 0.01) + 'px');
-  // Also fix #app height directly for older iOS
-  document.getElementById('app').style.height = vh + 'px';
+  var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.getElementById('app').style.height = h + 'px';
 }
 setVH();
 window.addEventListener('resize', setVH);
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', function() {
-    setVH();
-    // Scroll chat to bottom when keyboard appears/disappears
-    var msgs = document.getElementById('msgs');
-    msgs.scrollTop = msgs.scrollHeight;
-  });
-}
+if(window.visualViewport) window.visualViewport.addEventListener('resize', function(){
+  setVH();
+  var m = document.getElementById('msgs'); m.scrollTop = m.scrollHeight;
+});
 
-// ── Auto-detect page URL ───────────────────────────────
+// ── Page URL ────────────────────────────────────────
 var PAGE_URL = (function(){
-  var l = window.location;
-  var url = l.protocol + '//' + l.host + l.pathname;
-  if (!url.endsWith('/') && !url.split('/').pop().includes('.')) url += '/';
-  return url;
+  var l = window.location, u = l.protocol+'//'+l.host+l.pathname;
+  return u.endsWith('/')||u.split('/').pop().includes('.')?u:u+'/';
 })();
 
-// ── Helpers ────────────────────────────────────────────
-
-function setStatus(txt, cls){
-  document.getElementById('st').textContent = txt;
-  document.getElementById('dot').className = 'dot' + (cls ? ' '+cls : '');
+// ── Utilities ───────────────────────────────────────
+function setStatus(t,c){
+  document.getElementById('st').textContent=t;
+  document.getElementById('dot').className='dot'+(c?' '+c:'');
 }
-
-function toast(msg, cls){
-  var t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'show' + (cls ? ' '+cls : '');
-  clearTimeout(t._t);
-  t._t = setTimeout(function(){ t.className = ''; }, 2800);
+function toast(msg,cls){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.className='show'+(cls?' '+cls:'');
+  clearTimeout(t._t); t._t=setTimeout(function(){t.className='';},2800);
 }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function b64enc(s){ return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g,function(_,p){return String.fromCharCode(parseInt(p,16));})); }
+function b64dec(b){ return decodeURIComponent(Array.prototype.map.call(atob(b),function(c){return'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join('')); }
+function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; return(b/1048576).toFixed(2)+' MB'; }
+function mkId(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);}); }
+function nowTs(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+function fileIcon(n){ var x=n.split('.').pop().toLowerCase(); return {pdf:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',bmp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',zip:'📦',tar:'📦',gz:'📦',js:'💻',ts:'💻',py:'💻',html:'💻',json:'💻',txt:'📝',md:'📝',docx:'📝',xlsx:'📊',csv:'📊'}[x]||'📁'; }
 
-function esc(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function connectedPeers(){
+  return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; });
 }
+function anyConnected(){ return connectedPeers().length > 0; }
 
-function b64enc(str){
-  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(_,p){ return String.fromCharCode(parseInt(p,16)); }));
-}
-function b64dec(b64){
-  return decodeURIComponent(Array.prototype.map.call(atob(b64), function(c){
-    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-  }).join(''));
-}
-
-function fmtBytes(b){
-  if(b < 1024) return b + ' B';
-  if(b < 1048576) return (b/1024).toFixed(1) + ' KB';
-  return (b/1048576).toFixed(2) + ' MB';
-}
-
-function nowTs(){
-  return new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-}
-
-function addMsg(text, who){
-  var el = document.createElement('div');
-  el.className = 'msg ' + (who || 'sys');
-  el.innerHTML = '<div class="bubble">' + esc(text) + '</div><div class="ts">' + nowTs() + '</div>';
-  var m = document.getElementById('msgs');
-  m.appendChild(el);
-  m.scrollTop = m.scrollHeight;
-}
-
-// ── Modal helpers ──────────────────────────────────────
-
-function openOv(id){
-  document.getElementById(id).classList.add('open');
-}
-function closeOv(id){
-  document.getElementById(id).classList.remove('open');
-}
-
-document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape') document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
+// ── Modals ──────────────────────────────────────────
+function openOv(id){ document.getElementById(id).classList.add('open'); }
+function closeOv(id){ document.getElementById(id).classList.remove('open'); }
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape') document.querySelectorAll('.ov.open').forEach(function(o){o.classList.remove('open');});
 });
-
-// Close modal on backdrop tap
 ['join-ov','code-ov'].forEach(function(id){
-  document.getElementById(id).addEventListener('click', function(e){
-    if(e.target.id === id) closeOv(id);
-  });
+  document.getElementById(id).addEventListener('click',function(e){ if(e.target.id===id) closeOv(id); });
 });
 
-// ── Mobile sidebar toggle ──────────────────────────────
-
-function toggleSidebar(){
-  var sb = document.getElementById('sidebar');
-  sb.classList.toggle('expanded');
+// ── Chat messages ────────────────────────────────────
+function addMsg(text, who, fromName){
+  var el = document.createElement('div');
+  el.className = 'msg '+(who||'sys');
+  var label = (fromName && who==='them') ? '<div class="from-lbl">'+esc(fromName)+'</div>' : '';
+  el.innerHTML = label+'<div class="bubble">'+esc(text)+'</div><div class="ts">'+nowTs()+'</div>';
+  var m = document.getElementById('msgs');
+  m.appendChild(el); m.scrollTop = m.scrollHeight;
 }
 
-// ── Connected / idle UI ────────────────────────────────
+// ── Peer list UI ─────────────────────────────────────
+function renderPeers(){
+  var list = document.getElementById('peers-list');
+  var sec  = document.getElementById('peers-sec');
+  var sel  = document.getElementById('peer-target');
+  var wrap = document.getElementById('peer-target-wrap');
+  var pids = Object.keys(peers);
 
-function goConnected(){
-  // Close all modals
+  sec.style.display = pids.length ? '' : 'none';
+
+  // Update sidebar list
+  list.innerHTML = '';
+  pids.forEach(function(pid){
+    var p = peers[pid];
+    var alive = p.dc && p.dc.readyState==='open';
+    var d = document.createElement('div');
+    d.className = 'peer-item';
+    d.innerHTML =
+      '<div class="peer-dot'+(alive?'':' dead')+'"></div>'
+      +'<div class="peer-name">'+esc(p.name)+'</div>'
+      +'<button class="peer-kick" onclick="kickPeer(\''+pid+'\')" title="Disconnect">✕</button>';
+    list.appendChild(d);
+  });
+
+  // Update peer-target select
+  var prev = sel.value;
+  sel.innerHTML = '<option value="all">Everyone</option>';
+  pids.forEach(function(pid){
+    var p = peers[pid];
+    if(p.dc && p.dc.readyState==='open'){
+      var opt = document.createElement('option');
+      opt.value = pid; opt.textContent = p.name;
+      sel.appendChild(opt);
+    }
+  });
+  // Restore previous selection if still valid
+  if(prev && sel.querySelector('option[value="'+prev+'"]')) sel.value = prev;
+
+  // Show target selector only when >1 peer
+  wrap.style.display = connectedPeers().length > 1 ? '' : 'none';
+}
+
+function kickPeer(pid){
+  var p = peers[pid]; if(!p) return;
+  try{ p.pc.close(); }catch(e){}
+  removePeer(pid);
+}
+
+function removePeer(pid){
+  delete peers[pid];
+  renderPeers();
+  updateStatus();
+  if(!anyConnected()) goIdle();
+}
+
+function updateStatus(){
+  var n = connectedPeers().length;
+  if(n===0)       setStatus('idle');
+  else if(n===1)  setStatus('1 peer','on');
+  else            setStatus(n+' peers','on');
+}
+
+// ── Quick-send (splash) ──────────────────────────────
+function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
+function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
+function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
+function qdPick(e){ queueFiles(Array.from(e.target.files)); e.target.value=''; }
+function qdBrowse(e){ e.stopPropagation(); document.getElementById('qd-input').click(); }
+
+function queueFiles(files){
+  files.forEach(function(f){ queuedFiles.push(f); });
+  renderQueuedFiles();
+  if(!hostPC && !anyConnected()) startHost();
+}
+
+function renderQueuedFiles(){
+  var wrap   = document.getElementById('queued-files');
+  var status = document.getElementById('queued-status');
+  if(!queuedFiles.length){ wrap.style.display='none'; status.textContent=''; return; }
+  wrap.style.display='flex'; wrap.innerHTML='';
+  queuedFiles.forEach(function(f,i){
+    var d = document.createElement('div'); d.className='qf-item';
+    d.innerHTML='<span class="qf-icon">'+fileIcon(f.name)+'</span>'
+      +'<span class="qf-name">'+esc(f.name)+'</span>'
+      +'<span class="qf-size">'+fmtBytes(f.size)+'</span>'
+      +'<button class="qf-rm" onclick="removeQueued('+i+')" title="Remove">✕</button>';
+    wrap.appendChild(d);
+  });
+  var s = anyConnected() ? '⚡ Connected — sending now…' : '⏳ Waiting for peer to connect…';
+  status.textContent = queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+s;
+}
+
+function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
+
+function flushQueue(pid){
+  // Send queued files to newly connected peer
+  if(!queuedFiles.length) return;
+  var files = queuedFiles.slice();
+  queuedFiles = [];
+  renderQueuedFiles();
+  files.forEach(function(f){ announceFile(f, pid); });
+}
+
+// ── Connected / idle UI ──────────────────────────────
+function goConnected(pid){
   document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
-
-  // Switch to chat view
   document.getElementById('splash').style.display = 'none';
-  document.getElementById('chat').style.display = 'flex';
-  document.getElementById('drop-sec').style.display = '';
-  document.getElementById('files-sec').style.display = '';
+  document.getElementById('chat').style.display   = 'flex';
+  document.getElementById('drop-sec').style.display   = '';
+  document.getElementById('files-sec').style.display  = '';
   document.getElementById('ci').disabled = false;
+  document.getElementById('bd').style.display = '';
+  document.getElementById('conn-idle-hint').style.display = 'none';
 
-  // On mobile: collapse sidebar so chat is full screen
-  var sb = document.getElementById('sidebar');
-  if(window.innerWidth <= 600){
-    sb.classList.add('hidden');
-    sb.classList.remove('expanded');
-  }
-
-  // Focus chat input (desktop only — avoid keyboard pop on mobile)
   if(window.innerWidth > 600) document.getElementById('ci').focus();
+  var sb = document.getElementById('sidebar');
+  if(window.innerWidth <= 600){ sb.classList.add('hidden'); sb.classList.remove('expanded'); }
+
+  renderPeers();
+  updateStatus();
+  setTimeout(function(){ flushQueue(pid); }, 200);
 
   // Connected banner
-  var banner = document.createElement('div');
-  banner.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
-  banner.textContent = '⚡ Connected — peer to peer';
-  document.body.appendChild(banner);
-  setTimeout(function(){
-    banner.style.opacity = '0';
-    banner.style.transform = 'translateX(-50%) translateY(-8px)';
-    setTimeout(function(){ banner.remove(); }, 420);
-  }, 2400);
+  var p = peers[pid];
+  var b = document.createElement('div');
+  b.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
+  b.textContent = '⚡ '+(p?p.name:'Peer')+' connected';
+  document.body.appendChild(b);
+  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); }, 2200);
 }
 
 function goIdle(){
-  document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
-  document.getElementById('splash').style.display = '';
-  document.getElementById('chat').style.display = 'none';
-  document.getElementById('drop-sec').style.display = 'none';
+  document.getElementById('splash').style.display    = '';
+  document.getElementById('chat').style.display      = 'none';
+  document.getElementById('drop-sec').style.display  = 'none';
   document.getElementById('files-sec').style.display = 'none';
   document.getElementById('share-sec').style.display = 'none';
+  document.getElementById('peers-sec').style.display = 'none';
   document.getElementById('ci').disabled = true;
+  document.getElementById('bd').style.display = 'none';
+  document.getElementById('conn-idle-hint').style.display = '';
   document.getElementById('msgs').innerHTML = '';
   document.getElementById('flist').innerHTML = '<div class="empty">no files yet</div>';
-  // Show sidebar again on mobile
-  var sb = document.getElementById('sidebar');
-  sb.classList.remove('hidden', 'expanded');
-  document.getElementById('bh').style.display = '';
-  document.getElementById('bj').style.display = '';
-  document.getElementById('bh').disabled = false;
-  document.getElementById('bj').disabled = false;
-  document.getElementById('bh').textContent = '⊕ Create Session';
-  document.getElementById('bd').style.display = 'none';
-  fdata = {}; transfers = {};
+  document.getElementById('sidebar').classList.remove('hidden','expanded');
+  // Re-enable splash buttons
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+  setStatus('idle');
+  fdata={}; transfers={}; pendingSend={};
 }
 
-// ── RTCPeerConnection ──────────────────────────────────
+function toggleSidebar(){
+  var sb = document.getElementById('sidebar');
+  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+  else sb.classList.toggle('expanded');
+}
 
-function makePC(){
-  if(pc){ try{ pc.close(); }catch(e){} }
-  pc = new RTCPeerConnection(ICE);
+// ── RTCPeerConnection factory ────────────────────────
+function makePC(pid){
+  var pc = new RTCPeerConnection(ICE);
+
   pc.oniceconnectionstatechange = function(){
     var s = pc.iceConnectionState;
-    console.log('[RELAY] ICE:', s);
-    if(s === 'connected' || s === 'completed'){
-      setStatus('connected', 'on');
-      goConnected();
-      addMsg('⚡ connected — p2p link established');
-    } else if(s === 'failed'){
-      setStatus('failed', 'err');
-      toast('Connection failed — try again', 'er');
-    } else if(s === 'disconnected' || s === 'closed'){
-      setStatus('disconnected', 'err');
-      addMsg('✕ peer disconnected');
+    console.log('[RELAY] ICE', pid, s);
+    if(s==='connected'||s==='completed'){
+      // Only call goConnected once per peer
+      if(peers[pid] && !peers[pid]._connected){
+        peers[pid]._connected = true;
+        goConnected(pid);
+        addMsg('⚡ '+peers[pid].name+' connected');
+      }
+    } else if(s==='failed'){
+      toast(peers[pid]?peers[pid].name+' failed':'Connection failed','er');
+      removePeer(pid);
+    } else if(s==='disconnected'||s==='closed'){
+      if(peers[pid]){
+        addMsg('✕ '+peers[pid].name+' disconnected');
+        removePeer(pid);
+      }
     }
   };
-  pc.ondatachannel = function(e){ setupDC(e.channel); };
+
+  pc.ondatachannel = function(e){ setupDC(pid, e.channel); };
   return pc;
 }
 
-function setupDC(ch){
-  dc = ch;
+function setupDC(pid, ch){
+  peers[pid].dc = ch;
   ch.binaryType = 'arraybuffer';
   ch.onmessage = function(e){
-    if(typeof e.data === 'string') onText(e.data);
-    else onBin(e.data);
+    if(typeof e.data === 'string') onText(pid, e.data);
+    else onBin(pid, e.data);
   };
 }
 
-function gatherICE(peer){
+function gatherICE(pc){
   return new Promise(function(resolve){
-    if(peer.iceGatheringState === 'complete'){ resolve(peer.localDescription); return; }
-    var done = false;
-    function fin(){ if(done) return; done = true; resolve(peer.localDescription); }
-    peer.addEventListener('icecandidate', function(e){ if(e.candidate === null) fin(); });
-    peer.addEventListener('icegatheringstatechange', function(){ if(peer.iceGatheringState === 'complete') fin(); });
+    if(pc.iceGatheringState==='complete'){ resolve(pc.localDescription); return; }
+    var done=false;
+    function fin(){ if(done)return; done=true; resolve(pc.localDescription); }
+    pc.addEventListener('icecandidate',function(e){ if(e.candidate===null) fin(); });
+    pc.addEventListener('icegatheringstatechange',function(){ if(pc.iceGatheringState==='complete') fin(); });
     setTimeout(fin, 6000);
   });
 }
-
 function sdpObj(d){ return {type:d.type, sdp:d.sdp}; }
 
-// ── HOST ───────────────────────────────────────────────
-
+// ── HOST — create a new offer ────────────────────────
 function startHost(){
-  var bh = document.getElementById('bh'), bj = document.getElementById('bj');
-  bh.disabled = true; bj.disabled = true;
-  bh.textContent = '⏳ Gathering…';
-  setStatus('gathering…', 'wait');
-  makePC();
-  setupDC(pc.createDataChannel('relay', {ordered:true}));
+  // Disable splash connect buttons while gathering
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
+  document.getElementById('conn-idle-hint').style.display = 'none';
+  setStatus('gathering…','wait');
+
+  var pid = mkId();
+  peerCount++;
+  peers[pid] = { pc: null, dc: null, name: 'Peer '+peerCount, num: peerCount, _connected: false };
+  var pc = makePC(pid);
+  peers[pid].pc = pc;
+  hostPC = pc; // remember for applyAnswer
+
+  setupDC(pid, pc.createDataChannel('relay',{ordered:true}));
+
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      var code = b64enc(JSON.stringify(sdpObj(desc)));
-      document.getElementById('offer-out').value = code;
+      document.getElementById('offer-out').value = b64enc(JSON.stringify(sdpObj(desc)));
+      // Stash pid so applyAnswer knows which peer this offer belongs to
+      document.getElementById('host-ov').dataset.pid = pid;
       showSharePanel();
-      setStatus('waiting…', 'wait');
-      bh.style.display = 'none'; bj.style.display = 'none';
-      document.getElementById('bd').style.display = '';
+      setStatus('waiting…','wait');
+      document.getElementById('bd').style.display='';
       openOv('host-ov');
     })
     .catch(function(e){
-      console.error('[RELAY] startHost:', e);
-      toast('Error: ' + e.message, 'er');
-      goIdle();
+      console.error('[RELAY] startHost:',e);
+      toast('Error: '+e.message,'er');
+      delete peers[pid];
+      hostPC = null;
+      document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+      if(!anyConnected()) setStatus('idle');
     });
 }
 
+// "Add Peer" button when already connected — opens a fresh offer
+function addPeer(){
+  // Show share panel with a new offer; modal re-used
+  startHost();
+  // Also make sidebar visible if on mobile
+  var sb = document.getElementById('sidebar');
+  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+}
+
 function showSharePanel(){
-  document.getElementById('share-sec').style.display = '';
+  document.getElementById('share-sec').style.display='';
   drawQR(document.getElementById('qr-wrap'), PAGE_URL);
-  document.getElementById('page-url-el').textContent = PAGE_URL;
+  document.getElementById('page-url-el').textContent=PAGE_URL;
 }
 
-function copyPageUrl(){
-  navigator.clipboard.writeText(PAGE_URL).then(function(){ toast('Link copied', 'ok'); });
-}
+function copyPageUrl(){ navigator.clipboard.writeText(PAGE_URL).then(function(){ toast('Link copied','ok'); }); }
+function copyOffer(){ navigator.clipboard.writeText(document.getElementById('offer-out').value).then(function(){ toast('Offer code copied','ok'); }); }
 
-function copyOffer(){
-  navigator.clipboard.writeText(document.getElementById('offer-out').value)
-    .then(function(){ toast('Offer code copied', 'ok'); });
+function cancelHost(){
+  closeOv('host-ov');
+  var pid = document.getElementById('host-ov').dataset.pid;
+  if(pid && peers[pid]){
+    try{ peers[pid].pc.close(); }catch(e){}
+    delete peers[pid];
+  }
+  hostPC = null;
+  if(!anyConnected()){
+    document.getElementById('share-sec').style.display='none';
+    document.getElementById('bd').style.display='none';
+    document.getElementById('conn-idle-hint').style.display='';
+    document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
+    setStatus('idle');
+  }
 }
-
-function cancelHost(){ closeOv('host-ov'); doDisconnect(); }
 
 function applyAnswer(){
   var raw = document.getElementById('ans-inp').value.trim();
-  if(!raw){ toast('Paste the answer code first', 'er'); return; }
-  if(pc && (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed')){
-    closeOv('host-ov'); return;
-  }
-  if(!pc || pc.signalingState === 'stable'){
-    toast('Session expired — create a new one', 'er'); return;
-  }
+  if(!raw){ toast('Paste the answer code first','er'); return; }
+  var pid = document.getElementById('host-ov').dataset.pid;
+  var p   = peers[pid];
+  if(!p){ toast('Session expired — create a new one','er'); return; }
+  if(p.pc.iceConnectionState==='connected'||p.pc.iceConnectionState==='completed'){ closeOv('host-ov'); return; }
+  if(p.pc.signalingState==='stable'){ toast('Session expired — create a new one','er'); return; }
   var btn = document.getElementById('ans-btn');
-  btn.disabled = true; btn.textContent = '⏳ Connecting…';
+  btn.disabled=true; btn.textContent='⏳ Connecting…';
   try{
     var parsed = JSON.parse(b64dec(raw));
-    pc.setRemoteDescription(new RTCSessionDescription(parsed))
-      .then(function(){ setStatus('connecting…', 'wait'); })
+    p.pc.setRemoteDescription(new RTCSessionDescription(parsed))
+      .then(function(){ setStatus('connecting…','wait'); })
       .catch(function(e){
-        console.error('[RELAY] applyAnswer:', e);
-        toast('Bad answer code: ' + e.message, 'er');
-        btn.disabled = false; btn.textContent = 'Complete →';
+        toast('Bad answer code: '+e.message,'er');
+        btn.disabled=false; btn.textContent='Complete →';
       });
   }catch(e){
-    console.error('[RELAY] applyAnswer parse:', e);
-    toast('Could not read answer — copy it fully', 'er');
-    btn.disabled = false; btn.textContent = 'Complete →';
+    toast('Could not read answer — copy it fully','er');
+    btn.disabled=false; btn.textContent='Complete →';
   }
 }
 
-// ── JOINER ─────────────────────────────────────────────
-
+// ── JOINER ──────────────────────────────────────────
 function doJoin(){
   var raw = document.getElementById('join-inp').value.trim();
-  if(!raw){ toast('Paste the offer code', 'er'); return; }
+  if(!raw){ toast('Paste the offer code','er'); return; }
   closeOv('join-ov');
-  document.getElementById('bh').disabled = true;
-  document.getElementById('bj').disabled = true;
-  setStatus('connecting…', 'wait');
+  document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
+  setStatus('connecting…','wait');
+
   var offer;
-  try{ offer = JSON.parse(b64dec(raw)); }
-  catch(e){ toast('Could not read offer code', 'er'); goIdle(); return; }
-  makePC();
+  try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer code','er'); if(!anyConnected()) setStatus('idle'); return; }
+
+  var pid = mkId();
+  peerCount++;
+  peers[pid] = { pc:null, dc:null, name:'Peer '+peerCount, num:peerCount, _connected:false };
+  var pc = makePC(pid);
+  peers[pid].pc = pc;
+
   pc.setRemoteDescription(new RTCSessionDescription(offer))
     .then(function(){ return pc.createAnswer(); })
     .then(function(a){ return pc.setLocalDescription(a); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      var code = b64enc(JSON.stringify(sdpObj(desc)));
-      document.getElementById('code-out').value = code;
+      document.getElementById('code-out').value = b64enc(JSON.stringify(sdpObj(desc)));
       openOv('code-ov');
-      document.getElementById('bh').style.display = 'none';
-      document.getElementById('bj').style.display = 'none';
-      document.getElementById('bd').style.display = '';
+      document.getElementById('bd').style.display='';
     })
     .catch(function(e){
-      console.error('[RELAY] doJoin:', e);
-      toast('Error: ' + e.message, 'er');
-      goIdle();
+      console.error('[RELAY] doJoin:',e);
+      toast('Error: '+e.message,'er');
+      delete peers[pid];
+      if(!anyConnected()){ setStatus('idle'); document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; }); }
     });
 }
 
-function copyCode(){
-  navigator.clipboard.writeText(document.getElementById('code-out').value)
-    .then(function(){ toast('Answer code copied', 'ok'); });
-}
+function copyCode(){ navigator.clipboard.writeText(document.getElementById('code-out').value).then(function(){ toast('Answer code copied','ok'); }); }
 
-// ── DISCONNECT ─────────────────────────────────────────
-
-function doDisconnect(){
-  if(pc){ try{ pc.close(); }catch(e){} pc = null; }
-  dc = null;
+// ── DISCONNECT ───────────────────────────────────────
+function doDisconnectAll(){
+  Object.keys(peers).forEach(function(pid){ try{ peers[pid].pc.close(); }catch(e){} });
+  peers={};
+  hostPC=null;
   setStatus('idle');
   goIdle();
 }
 
-// ── CHAT ───────────────────────────────────────────────
-
+// ── CHAT ────────────────────────────────────────────
 function sendChat(){
-  var inp = document.getElementById('ci');
-  var text = inp.value.trim();
+  var inp=document.getElementById('ci'), text=inp.value.trim();
   if(!text) return;
-  if(!dc || dc.readyState !== 'open'){ toast('Not connected', 'er'); return; }
-  dc.send(JSON.stringify({t:'chat', text:text}));
-  addMsg(text, 'me');
-  inp.value = '';
-  inp.style.height = '';
-  setVH(); // re-measure after input shrinks
+  var open = connectedPeers();
+  if(!open.length){ toast('Not connected','er'); return; }
+  var msg = JSON.stringify({t:'chat', text:text});
+  open.forEach(function(pid){ peers[pid].dc.send(msg); });
+  addMsg(text,'me');
+  inp.value=''; inp.style.height='';
+}
+function ciKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
+function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f, targetPid()); }); e.target.value=''; }
+
+// Returns the pid to send to based on the target selector, or null = all
+function targetPid(){
+  var v = document.getElementById('peer-target').value;
+  return (v && v!=='all') ? v : null;
 }
 
-function ciKey(e){
-  // Send on Enter (but allow Shift+Enter for newline)
-  if(e.key === 'Enter' && !e.shiftKey){
-    e.preventDefault();
-    sendChat();
+// ── FILE ANNOUNCE / ACCEPT / DECLINE ─────────────────
+function announceFile(file, pid){
+  // pid=null → send to all connected peers
+  var targets = pid ? [pid] : connectedPeers();
+  if(!targets.length){ toast('Not connected','er'); return; }
+
+  targets.forEach(function(tpid){
+    var p = peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
+    var ftid = mkId();
+    pendingSend[ftid] = {file:file, pid:tpid};
+    fdata[ftid] = {name:file.name, size:file.size, dir:'⏳ awaiting accept · '+p.name, pct:0};
+    addFileRow(ftid);
+    p.dc.send(JSON.stringify({t:'fa', id:ftid, name:file.name, size:file.size, mime:file.type}));
+    addMsg('📤 File request to '+p.name+': '+file.name+' ('+fmtBytes(file.size)+')', 'me');
+  });
+}
+
+function showFileRequest(pid, m){
+  var p = peers[pid];
+  var el = document.createElement('div');
+  el.className='fi-request'; el.id='freq-'+m.id;
+  el.innerHTML =
+    '<div class="fi-req-head">'
+      +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div class="fi-req-name">'+esc(m.name)+'</div>'
+        +'<div class="fi-req-size">'+fmtBytes(m.size)+(p?' · from '+esc(p.name):'')+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div class="fi-req-btns">'
+      +'<button class="btn primary" onclick="respondFile(\''+m.id+'\',\''+pid+'\',true)">✓ Accept</button>'
+      +'<button class="btn danger"  onclick="respondFile(\''+m.id+'\',\''+pid+'\',false)">✕ Decline</button>'
+    +'</div>';
+  var msgs=document.getElementById('msgs');
+  msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+}
+
+function respondFile(ftid, pid, accept){
+  var card=document.getElementById('freq-'+ftid);
+  var p=peers[pid];
+  if(card){
+    if(accept){
+      card.innerHTML='<div style="font-size:11px;color:#00ff88;padding:4px 0">✓ Accepted — receiving…</div>';
+    } else {
+      card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>';
+      setTimeout(function(){ if(card.parentNode) card.remove(); },1500);
+    }
+  }
+  if(p&&p.dc&&p.dc.readyState==='open'){
+    p.dc.send(JSON.stringify({t:accept?'fr':'fd', id:ftid}));
   }
 }
 
-function ciResize(el){
-  el.style.height = '';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
+// ── INCOMING MESSAGES ────────────────────────────────
+function onText(pid, raw){
+  var p=peers[pid];
+  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
 
-// Attach button in chat bar → pick files
-function ciFilePick(e){
-  Array.from(e.target.files).forEach(sendFile);
-  e.target.value = '';
-}
+  if(m.t==='chat'){
+    addMsg(m.text,'them', p?p.name:null);
 
-// ── INCOMING ───────────────────────────────────────────
+  } else if(m.t==='fa'){
+    showFileRequest(pid, m);
 
-function onText(raw){
-  var m;
-  try{ m = JSON.parse(raw); }catch(e){ addMsg(raw, 'them'); return; }
-  if(m.t === 'chat'){
-    addMsg(m.text, 'them');
-  } else if(m.t === 'fs'){
-    // New incoming file transfer
-    transfers[m.id] = {name:m.name, size:m.size, mime:m.mime, chunks:[], got:0};
-    fdata[m.id] = {name:m.name, size:m.size, dir:'↓ recv', pct:0};
+  } else if(m.t==='fr'){
+    var ps=pendingSend[m.id]; if(!ps) return;
+    delete pendingSend[m.id];
+    if(fdata[m.id]) fdata[m.id].dir='↑ sending';
+    updateFileRowMeta(m.id);
+    startSendingFile(m.id, ps.file, ps.pid);
+    addMsg('✓ '+(p?p.name:'Peer')+' accepted — sending '+ps.file.name,'sys');
+
+  } else if(m.t==='fd'){
+    var ps=pendingSend[m.id];
+    delete pendingSend[m.id];
+    if(fdata[m.id]) fdata[m.id].dir='✕ declined';
+    updateFileRowMeta(m.id);
+    addMsg('✕ '+(p?p.name:'Peer')+' declined '+(ps?ps.file.name:'file'),'sys');
+    toast('File declined','er');
+
+  } else if(m.t==='fs'){
+    transfers[m.id]={pid:pid, name:m.name, size:m.size, mime:m.mime, chunks:[], got:0};
+    fdata[m.id]={name:m.name, size:m.size, dir:'↓ recv · '+(p?p.name:'?'), pct:0};
     addFileRow(m.id);
-    addMsg('📁 receiving ' + m.name + ' (' + fmtBytes(m.size) + ')…', 'sys');
-  } else if(m.t === 'fe'){
-    var ft = transfers[m.id]; if(!ft) return;
-    var blob = new Blob(ft.chunks, {type: ft.mime || 'application/octet-stream'});
-    fdata[m.id].blob = blob;
-    fdata[m.id].pct = 100;
-    fdata[m.id].dir = '↓ received';
+
+  } else if(m.t==='fe'){
+    var ft=transfers[m.id]; if(!ft) return;
+    fdata[m.id].blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
     updateFileRow(m.id);
-    addMsg('✓ ' + ft.name + ' received — tap ↓ to save', 'sys');
-    toast('Received: ' + ft.name, 'ok');
+    addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
+    toast('Received: '+ft.name,'ok');
     delete transfers[m.id];
   }
 }
 
-function onBin(buf){
-  // First 36 bytes = transfer ID (padded with spaces)
-  var id = new TextDecoder().decode(new Uint8Array(buf, 0, 36)).replace(/\s+$/,'');
-  var ft = transfers[id]; if(!ft) return;
-  var chunk = buf.slice(36);
-  ft.chunks.push(chunk);
-  ft.got += chunk.byteLength;
-  var pct = Math.round(ft.got / ft.size * 100);
-  if(fdata[id]) fdata[id].pct = pct;
-  // Update progress bar in-place — don't re-render whole list
-  var bar = document.querySelector('#fi-' + id + ' .fi-fill');
-  if(bar) bar.style.width = pct + '%';
+function onBin(pid, buf){
+  var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
+  var ft=transfers[ftid]; if(!ft) return;
+  var chunk=buf.slice(36);
+  ft.chunks.push(chunk); ft.got+=chunk.byteLength;
+  var pct=Math.round(ft.got/ft.size*100);
+  if(fdata[ftid]) fdata[ftid].pct=pct;
+  var bar=document.getElementById('fb-'+ftid);
+  if(bar) bar.style.width=pct+'%';
 }
 
-// ── FILE SENDING ───────────────────────────────────────
-
-function sendFile(file){
-  if(!dc || dc.readyState !== 'open'){ toast('Not connected', 'er'); return; }
-  // Generate a padded 36-char ID (UUID-ish, always exactly 36 chars)
-  var id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){
-    var r = Math.random()*16|0;
-    return (c === 'x' ? r : (r&0x3|0x8)).toString(16);
-  });
-  fdata[id] = {name:file.name, size:file.size, dir:'↑ sending', pct:0};
-  addFileRow(id); // add row ONCE
-  dc.send(JSON.stringify({t:'fs', id:id, name:file.name, size:file.size, mime:file.type}));
-  addMsg('↑ sending ' + file.name + ' (' + fmtBytes(file.size) + ')…', 'sys');
-
-  // Pad ID to exactly 36 bytes for binary header
-  var idBytes = new TextEncoder().encode((id + '                                    ').slice(0, 36));
-  var offset = 0;
-
+// ── FILE SENDING ─────────────────────────────────────
+function startSendingFile(ftid, file, pid){
+  var p=peers[pid]; if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
+  p.dc.send(JSON.stringify({t:'fs', id:ftid, name:file.name, size:file.size, mime:file.type}));
+  var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
+  var offset=0;
   function pump(){
-    if(offset >= file.size){
-      // All chunks sent — notify receiver
-      dc.send(JSON.stringify({t:'fe', id:id}));
-      fdata[id].pct = 100;
-      fdata[id].dir = '↑ sent';
-      updateFileRow(id);
-      addMsg('✓ ' + file.name + ' sent', 'sys');
+    if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted: '+p.name,'er'); return; }
+    if(offset>=file.size){
+      p.dc.send(JSON.stringify({t:'fe', id:ftid}));
+      if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
+      updateFileRow(ftid);
+      addMsg('✓ '+file.name+' sent to '+p.name,'sys');
       return;
     }
-    // Backpressure: wait if buffer is getting full
-    if(dc.bufferedAmount > 4 * 1024 * 1024){
-      setTimeout(pump, 50);
-      return;
-    }
-    var slice = file.slice(offset, offset + CHUNK);
-    var reader = new FileReader();
-    reader.onload = function(ev){
-      var cb = ev.target.result;
-      // Prepend the 36-byte ID header to each chunk
-      var out = new Uint8Array(36 + cb.byteLength);
-      out.set(idBytes, 0);
-      out.set(new Uint8Array(cb), 36);
+    if(p.dc.bufferedAmount>4*1024*1024){ setTimeout(pump,50); return; }
+    var slice=file.slice(offset,offset+CHUNK);
+    var rd=new FileReader();
+    rd.onload=function(ev){
+      var cb=ev.target.result;
+      var out=new Uint8Array(36+cb.byteLength);
+      out.set(idBytes,0); out.set(new Uint8Array(cb),36);
       try{
-        dc.send(out.buffer);
-        offset += cb.byteLength;
-        fdata[id].pct = Math.min(99, Math.round(offset / file.size * 100));
-        // Update progress bar in-place
-        var bar = document.querySelector('#fi-' + id + ' .fi-fill');
-        if(bar) bar.style.width = fdata[id].pct + '%';
+        p.dc.send(out.buffer);
+        offset+=cb.byteLength;
+        if(fdata[ftid]) fdata[ftid].pct=Math.min(99,Math.round(offset/file.size*100));
+        var bar=document.getElementById('fb-'+ftid);
+        if(bar) bar.style.width=(fdata[ftid]?fdata[ftid].pct:0)+'%';
         pump();
-      }catch(e){
-        console.error('[RELAY] send chunk error:', e);
-        toast('Send failed: ' + e.message, 'er');
-      }
+      }catch(e){ toast('Send error: '+e.message,'er'); }
     };
-    reader.readAsArrayBuffer(slice);
+    rd.readAsArrayBuffer(slice);
   }
   pump();
 }
 
+// Sidebar drop zone
 function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
-function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(sendFile); }
-function dzPick(e){ Array.from(e.target.files).forEach(sendFile); e.target.value = ''; }
+function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f, targetPid()); }); }
+function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f, targetPid()); }); e.target.value=''; }
 
-// ── FILE LIST UI ───────────────────────────────────────
-// Key fix: addFileRow adds once; updateFileRow updates in-place.
-// Never re-render the whole list during a transfer.
-
-function fileIcon(name){
-  var x = name.split('.').pop().toLowerCase();
-  return {
-    pdf:'📄', jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', webp:'🖼', svg:'🖼', bmp:'🖼',
-    mp4:'🎬', mov:'🎬', avi:'🎬', mkv:'🎬', webm:'🎬',
-    mp3:'🎵', wav:'🎵', ogg:'🎵', flac:'🎵', aac:'🎵',
-    zip:'📦', tar:'📦', gz:'📦', '7z':'📦', rar:'📦',
-    js:'💻', ts:'💻', py:'💻', html:'💻', css:'💻', json:'💻',
-    txt:'📝', md:'📝', doc:'📝', docx:'📝',
-    xls:'📊', xlsx:'📊', csv:'📊'
-  }[x] || '📁';
-}
-
+// ── FILE LIST UI ─────────────────────────────────────
 function addFileRow(id){
-  var list = document.getElementById('flist');
-  // Remove empty state
-  var empty = list.querySelector('.empty');
-  if(empty) empty.remove();
-  var f = fdata[id];
-  var div = document.createElement('div');
-  div.className = 'fi';
-  div.id = 'fi-' + id;
-  div.innerHTML =
-    '<div class="fi-ico">' + fileIcon(f.name) + '</div>' +
-    '<div class="fi-inf">' +
-      '<div class="fi-name" title="' + esc(f.name) + '">' + esc(f.name) + '</div>' +
-      '<div class="fi-meta" id="fm-' + id + '">' + fmtBytes(f.size) + ' · ' + f.dir + '</div>' +
-      '<div class="fi-bar"><div class="fi-fill" id="fb-' + id + '" style="width:0%"></div></div>' +
-    '</div>' +
-    '<div id="fa-' + id + '"></div>'; // action slot
-  list.insertBefore(div, list.firstChild); // newest first
+  var list=document.getElementById('flist');
+  var empty=list.querySelector('.empty'); if(empty) empty.remove();
+  var f=fdata[id];
+  var d=document.createElement('div'); d.className='fi'; d.id='fi-'+id;
+  d.innerHTML=
+    '<div class="fi-ico">'+fileIcon(f.name)+'</div>'
+    +'<div class="fi-inf">'
+      +'<div class="fi-name" title="'+esc(f.name)+'">'+esc(f.name)+'</div>'
+      +'<div class="fi-meta" id="fm-'+id+'">'+fmtBytes(f.size)+' · '+f.dir+'</div>'
+      +'<div class="fi-bar"><div class="fi-fill" id="fb-'+id+'" style="width:0%"></div></div>'
+    +'</div>'
+    +'<div class="fi-act" id="fa-'+id+'"></div>';
+  list.insertBefore(d,list.firstChild);
 }
-
+function updateFileRowMeta(id){
+  var f=fdata[id]; if(!f) return;
+  var m=document.getElementById('fm-'+id); if(m) m.textContent=fmtBytes(f.size)+' · '+f.dir;
+}
 function updateFileRow(id){
-  var f = fdata[id]; if(!f) return;
-  var meta = document.getElementById('fm-' + id);
-  var bar = document.getElementById('fb-' + id);
-  var action = document.getElementById('fa-' + id);
-  if(meta) meta.textContent = fmtBytes(f.size) + ' · ' + f.dir;
-  if(bar) bar.style.width = f.pct + '%';
-  if(action && f.blob && f.pct === 100){
-    action.innerHTML = '<button class="btn fi-dl" onclick="dlFile(\'' + id + '\')">↓</button>';
-    // Hide progress bar when done
-    var barEl = document.getElementById('fb-' + id);
-    if(barEl) barEl.parentElement.style.display = 'none';
+  var f=fdata[id]; if(!f) return;
+  updateFileRowMeta(id);
+  var bar=document.getElementById('fb-'+id); if(bar) bar.style.width=f.pct+'%';
+  if(f.blob&&f.pct===100){
+    var act=document.getElementById('fa-'+id);
+    if(act) act.innerHTML='<button class="btn" style="padding:5px 10px;font-size:11px" onclick="dlFile(\''+id+'\')">↓</button>';
+    if(bar) bar.parentElement.style.display='none';
   }
 }
-
 function dlFile(id){
-  var f = fdata[id]; if(!f || !f.blob) return;
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(f.blob);
-  a.download = f.name;
-  a.click();
-  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 60000);
+  var f=fdata[id]; if(!f||!f.blob) return;
+  var a=document.createElement('a'); a.href=URL.createObjectURL(f.blob); a.download=f.name; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
 }
 
-// ─────────────────────────────────────────────────────────
-//  QR CODE — pure JS, zero dependencies
-//  Reed-Solomon, versions 1-10, error level M
-// ─────────────────────────────────────────────────────────
-
-function drawQR(container, text){
-  container.innerHTML = '';
+// ── QR CODE ──────────────────────────────────────────
+function drawQR(container,text){
+  container.innerHTML='';
   try{
-    var mat = qrBuild(text);
-    var n = mat.length, cell = 3, pad = 4, sz = n*cell + pad*2;
-    var s = '<svg xmlns="http://www.w3.org/2000/svg" width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'" shape-rendering="crispEdges">';
-    s += '<rect width="'+sz+'" height="'+sz+'" fill="white"/>';
+    var mat=qrBuild(text),n=mat.length,cell=3,pad=4,sz=n*cell+pad*2;
+    var s='<svg xmlns="http://www.w3.org/2000/svg" width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'" shape-rendering="crispEdges">';
+    s+='<rect width="'+sz+'" height="'+sz+'" fill="white"/>';
     for(var r=0;r<n;r++) for(var c=0;c<n;c++)
-      if(mat[r][c]) s += '<rect x="'+(pad+c*cell)+'" y="'+(pad+r*cell)+'" width="'+cell+'" height="'+cell+'" fill="black"/>';
-    s += '</svg>';
-    container.innerHTML = s;
-  }catch(e){
-    container.innerHTML = '<div style="font-size:10px;color:#444;padding:8px;text-align:center">(QR unavailable)</div>';
-    console.error('[RELAY] QR:', e);
-  }
+      if(mat[r][c]) s+='<rect x="'+(pad+c*cell)+'" y="'+(pad+r*cell)+'" width="'+cell+'" height="'+cell+'" fill="black"/>';
+    s+='</svg>'; container.innerHTML=s;
+  }catch(e){ container.innerHTML='<div style="font-size:10px;color:#444;padding:8px">(QR unavailable)</div>'; }
 }
-
 function qrBuild(text){
-  var data = utf8b(text);
-  var CAP = [16,28,44,64,86,108,124,154,182,216];
-  var ver = 1; while(ver <= 10 && CAP[ver-1] < data.length) ver++;
-  if(ver > 10) throw new Error('Too long');
-  var CW = [[16,10],[28,16],[44,26],[64,36],[86,48],[108,60],[124,72],[154,86],[182,100],[216,114]];
-  var dataCW = CW[ver-1][0], ecCW = CW[ver-1][1];
-  var bits = [];
+  var data=utf8b(text);
+  var CAP=[16,28,44,64,86,108,124,154,182,216];
+  var ver=1; while(ver<=10&&CAP[ver-1]<data.length) ver++;
+  if(ver>10) throw new Error('Too long');
+  var CW=[[16,10],[28,16],[44,26],[64,36],[86,48],[108,60],[124,72],[154,86],[182,100],[216,114]];
+  var dataCW=CW[ver-1][0],ecCW=CW[ver-1][1];
+  var bits=[];
   function pb(v,l){ for(var i=l-1;i>=0;i--) bits.push((v>>i)&1); }
-  pb(4,4); pb(data.length, ver<10?8:16);
-  data.forEach(function(b){ pb(b,8); });
-  pb(0,4);
-  while(bits.length%8) bits.push(0);
+  pb(4,4); pb(data.length,ver<10?8:16);
+  data.forEach(function(b){pb(b,8);});
+  pb(0,4); while(bits.length%8) bits.push(0);
   var PAD=[0xEC,0x11],pi=0;
-  while(bits.length < dataCW*8){ pb(PAD[pi%2],8); pi++; }
-  var db=[];
-  for(var i=0;i<dataCW;i++){ var b=0; for(var j=0;j<8;j++) b=(b<<1)|(bits[i*8+j]||0); db.push(b); }
-  var all = db.concat(rsEnc(db, ecCW));
-  var n=4*ver+17, mx=[], used=[];
+  while(bits.length<dataCW*8){ pb(PAD[pi%2],8); pi++; }
+  var db=[]; for(var i=0;i<dataCW;i++){ var b=0; for(var j=0;j<8;j++) b=(b<<1)|(bits[i*8+j]||0); db.push(b); }
+  var all=db.concat(rsEnc(db,ecCW));
+  var n=4*ver+17,mx=[],used=[];
   for(var i=0;i<n;i++){ mx[i]=new Array(n).fill(null); used[i]=new Array(n).fill(false); }
   function mark(r,c,v){ mx[r][c]=v; used[r][c]=true; }
   function finder(tr,tc){
@@ -1003,7 +1107,7 @@ function qrBuild(text){
   var AP=[[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
   if(ver>=2){ var ap=AP[ver]||[]; for(var ai=0;ai<ap.length;ai++) for(var aj=0;aj<ap.length;aj++){
     var ar=ap[ai],ac=ap[aj]; if(used[ar][ac]) continue;
-    for(var dr=-2;dr<=2;dr++) for(var dc=-2;dc<=2;dc++) mark(ar+dr,ac+dc,Math.abs(dr)===2||Math.abs(dc)===2||(dr===0&&dc===0));
+    for(var dr=-2;dr<=2;dr++) for(var dc2=-2;dc2<=2;dc2++) mark(ar+dr,ac+dc2,Math.abs(dr)===2||Math.abs(dc2)===2||(dr===0&&dc2===0));
   }}
   mark(n-8,8,true);
   for(var i=0;i<=8;i++){
@@ -1019,7 +1123,7 @@ function qrBuild(text){
         var cc=col-side; if(cc<0) continue;
         if(!used[row][cc]){
           var bit=(bi<all.length*8)?((all[bi>>3]>>(7-(bi&7)))&1):0; bi++;
-          mx[row][cc] = ((bit ^ ((row+cc)%2)) === 1);
+          mx[row][cc]=((bit^((row+cc)%2))===1);
         }
       }
     }
@@ -1030,32 +1134,16 @@ function qrBuild(text){
   for(var i=0;i<15;i++){ mx[FP1[i][0]][FP1[i][1]]=!!FMT[i]; mx[FP2[i][0]][FP2[i][1]]=!!FMT[i]; }
   return mx;
 }
-
-function utf8b(str){
-  var out=[];
-  for(var i=0;i<str.length;i++){
-    var c=str.charCodeAt(i);
-    if(c<0x80) out.push(c);
-    else if(c<0x800) out.push(0xC0|(c>>6), 0x80|(c&0x3F));
-    else out.push(0xE0|(c>>12), 0x80|((c>>6)&0x3F), 0x80|(c&0x3F));
-  }
-  return out;
-}
-
-var GFe=new Array(512), GFl=new Array(256);
-(function(){ var x=1; for(var i=0;i<255;i++){ GFe[i]=x; GFl[x]=i; x<<=1; if(x&256) x^=285; } for(var i=255;i<512;i++) GFe[i]=GFe[i-255]; })();
-function gfm(a,b){ return (a&&b) ? GFe[GFl[a]+GFl[b]] : 0; }
-function gfpow(x,n){ return GFe[(GFl[x]*n)%255]; }
-
-function rsEnc(data, ec){
+function utf8b(str){ var out=[]; for(var i=0;i<str.length;i++){ var c=str.charCodeAt(i); if(c<0x80) out.push(c); else if(c<0x800) out.push(0xC0|(c>>6),0x80|(c&0x3F)); else out.push(0xE0|(c>>12),0x80|((c>>6)&0x3F),0x80|(c&0x3F)); } return out; }
+var GFe=new Array(512),GFl=new Array(256);
+(function(){var x=1;for(var i=0;i<255;i++){GFe[i]=x;GFl[x]=i;x<<=1;if(x&256)x^=285;}for(var i=255;i<512;i++)GFe[i]=GFe[i-255];})();
+function gfm(a,b){return(a&&b)?GFe[GFl[a]+GFl[b]]:0;}
+function gfpow(x,n){return GFe[(GFl[x]*n)%255];}
+function rsEnc(data,ec){
   var gen=[1];
-  for(var i=0;i<ec;i++){
-    var r=new Array(gen.length+1).fill(0);
-    for(var a=0;a<gen.length;a++) for(var b=0;b<2;b++) r[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]);
-    gen=r;
-  }
+  for(var i=0;i<ec;i++){var r=new Array(gen.length+1).fill(0);for(var a=0;a<gen.length;a++)for(var b=0;b<2;b++)r[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]);gen=r;}
   var msg=data.slice(); for(var i=0;i<ec;i++) msg.push(0);
-  for(var i=0;i<data.length;i++){ var c=msg[i]; if(!c) continue; for(var j=1;j<=ec;j++) msg[i+j]^=gfm(gen[j],c); }
+  for(var i=0;i<data.length;i++){var c=msg[i];if(!c)continue;for(var j=1;j<=ec;j++)msg[i+j]^=gfm(gen[j],c);}
   return msg.slice(data.length);
 }
 </script>
