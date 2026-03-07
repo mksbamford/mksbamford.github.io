@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RELAY — P2P File &amp; Chat</title>
+<title>RELAY — P2P</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{ --safe-b:env(safe-area-inset-bottom,0px); }
@@ -235,6 +235,36 @@ main{flex-direction:column}
 
 /* Chat peer label */
 .from-lbl{font-size:10px;color:#333;margin-bottom:2px;padding:0 3px}
+
+/* SIDEBAR COLLAPSIBLE (desktop) */
+#sidebar{transition:width .2s,min-width .2s}
+#sidebar.collapsed{width:0;min-width:0;overflow:hidden;border-right:none}
+#sb-desktop-toggle{
+display:flex;padding:6px 10px;font-size:14px;background:transparent;
+border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;
+min-height:34px;align-items:center;-webkit-tap-highlight-color:transparent;
+}
+#sb-desktop-toggle:hover{color:#00ff88;border-color:#00ff88}
+
+/* IMAGE IN CHAT */
+.img-bubble{max-width:240px;border-radius:6px;overflow:hidden;margin-top:4px;cursor:pointer;border:1px solid #222}
+.img-bubble img{display:block;width:100%;height:auto;max-height:200px;object-fit:cover}
+
+/* REQUEST-FILE mode — hide connect UI */
+body.req-mode #manual-connect,
+body.req-mode #manual-connect + div,
+body.req-mode .splash-steps{display:none!important}
+body.req-mode #quick-drop .qd-title::after{content:’ — file requested’}
+body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
+
+/* ROOM indicator in header */
+#room-pill{display:none;align-items:center;gap:6px;font-size:11px;color:#00ff88;
+background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);
+padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
+#room-pill:hover{background:rgba(0,255,136,.12)}
+
+/* REQUEST FILE button in splash */
+#req-file-btn{margin-top:-8px}
 </style>
 
 </head>
@@ -243,10 +273,14 @@ main{flex-direction:column}
   <header>
     <div style="display:flex;align-items:center;gap:8px">
       <button id="sb-toggle" onclick="toggleSidebar()">☰</button>
+      <button id="sb-desktop-toggle" onclick="toggleSidebarDesktop()" title="Toggle panel">☰</button>
       <span class="logo">RELAY</span>
-      <span class="logo-sub">p2p · no server</span>
+      <span class="logo-sub" id="logo-sub-txt">p2p</span>
     </div>
-    <div class="pill"><div class="dot" id="dot"></div><span id="st">idle</span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div id="room-pill" onclick="copyRoomLink()" title="Copy room link">🔗 <span id="room-id-el"></span></div>
+      <div class="pill"><div class="dot" id="dot"></div><span id="st">idle</span></div>
+    </div>
   </header>
 
   <main>
@@ -317,6 +351,9 @@ main{flex-direction:column}
       <button class="btn primary" style="pointer-events:auto;position:relative;z-index:1" onclick="qdBrowse(event)">Choose Files</button>
     </div>
 
+    <!-- Request a File button -->
+    <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
+
     <!-- Manual connect strip below the drop zone -->
     <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
       <div style="flex:1;height:1px;background:#1a1a1a"></div>
@@ -378,22 +415,51 @@ main{flex-direction:column}
 
 <div class="ov" id="host-ov">
   <div class="modal">
-    <div class="modal-title">Session Ready</div>
-    <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
-    <div class="modal-field">
-      <div class="modal-lbl">Your Offer Code</div>
-      <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
-      <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
+    <div class="modal-title">Invite a Peer</div>
+    <!-- Tab switcher -->
+    <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid #252525;border-radius:4px;overflow:hidden">
+      <button class="btn" id="tab-ws" onclick="switchTab('ws')" style="flex:1;border:none;border-radius:0;border-right:1px solid #252525">⚡ Room Link</button>
+      <button class="btn" id="tab-sdp" onclick="switchTab('sdp')" style="flex:1;border:none;border-radius:0">🔑 Manual SDP</button>
     </div>
-    <hr class="div">
-    <div class="modal-field" style="margin-bottom:0">
-      <div class="modal-lbl">Paste Answer Code from peer</div>
-      <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
+
+```
+<!-- WS tab: room-based, auto-connects via WebSocket relay -->
+<div id="tab-ws-body">
+  <div class="modal-sub">Share this link — your peer opens it and connects automatically.</div>
+  <div class="modal-field">
+    <div class="modal-lbl">Room Link</div>
+    <div class="copy-row">
+      <div class="copy-val" id="room-link-el" onclick="this.select?.()" style="color:#00ff88">—</div>
+      <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyRoomLink()">copy</button>
     </div>
-    <div class="modal-foot">
-      <button class="btn" onclick="cancelHost()">Cancel</button>
-      <button class="btn primary" id="ans-btn" onclick="applyAnswer()">Complete →</button>
-    </div>
+  </div>
+  <div style="text-align:center;margin:10px 0">
+    <div id="room-qr-wrap" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;line-height:0"></div>
+  </div>
+  <div style="font-size:11px;color:#333;text-align:center" id="ws-status-lbl">Waiting for peer to open the link…</div>
+</div>
+
+<!-- SDP tab: manual offer/answer (no relay required) -->
+<div id="tab-sdp-body" style="display:none">
+  <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
+  <div class="modal-field">
+    <div class="modal-lbl">Your Offer Code</div>
+    <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
+    <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
+  </div>
+  <hr class="div">
+  <div class="modal-field" style="margin-bottom:0">
+    <div class="modal-lbl">Paste Answer Code from peer</div>
+    <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
+  </div>
+</div>
+
+<div class="modal-foot">
+  <button class="btn" onclick="cancelHost()">Cancel</button>
+  <button class="btn primary" id="ans-btn" onclick="applyAnswer()" style="display:none">Complete →</button>
+</div>
+```
+
   </div>
 </div>
 
@@ -412,73 +478,119 @@ main{flex-direction:column}
   </div>
 </div>
 
+<!-- Request-file modal: shown when ?req=ROOM -->
+
+<div class="ov" id="req-ov">
+  <div class="modal">
+    <div class="modal-title">📥 File Requested</div>
+    <div class="modal-sub" id="req-sub">Someone is requesting a file from you. Pick the file below and it will be sent automatically.</div>
+    <div style="text-align:center;padding:20px 0">
+      <button class="btn primary" style="min-width:160px" onclick="reqPickFile()">Choose File</button>
+      <input type="file" id="req-file-input" style="position:absolute;width:0;height:0;opacity:0" onchange="reqFileChosen(event)">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeOv('req-ov')">Dismiss</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
-// ─────────────────────────────────────────────────────
-//  RELAY — mesh WebRTC, serverless
+// ═══════════════════════════════════════════════════════════════════
+//  RELAY — serverless mesh P2P  (WebSocket-assisted signalling)
 //
-//  Data-channel message types:
-//    chat        — broadcast text
-//    fa          — file announce   (ask receiver to accept)
-//    fr / fd     — file accept / decline
-//    fs / fe     — file start / end (metadata + completion signal)
-//    sig-offer   — relayed SDP offer   (for mesh auto-wiring)
-//    sig-answer  — relayed SDP answer
+//  Modes:
+//    Normal      — create/join sessions manually or via room link
+//    ?room=XXXX  — auto-join a room (peer invited via link)
+//    ?req=XXXX   — "request a file" mode — pick file, auto-send
 //
-//  Binary frames: [36-byte transfer-ID padded][chunk bytes]
+//  WebSocket Worker (optional but recommended):
+//    Set WS_URL to your deployed relay-worker URL.
+//    Falls back to manual SDP exchange if WS is unavailable.
 //
-//  Mesh wiring:
-//    When peer C connects to A, A introduces C to every other
-//    peer it knows by relaying SDP offers/answers through itself.
-//    Result: full mesh — everyone connected to everyone.
-// ─────────────────────────────────────────────────────
+//  DC message types:  chat | fa | fr | fd | fs | fe
+//                     meet | peer-list | sig-offer | sig-answer | sig-answer-apply
+//  Binary frames: [36-byte padded transfer-ID][chunk bytes]
+// ═══════════════════════════════════════════════════════════════════
 
-// ── Tunables ────────────────────────────────────────
-var CHUNK          = 16 * 1024;   // smaller chunks = better loopback + mobile
-var BUF_HIGH       = 1024 * 1024; // pause pumping above 1 MB buffered
-var BUF_LOW        = 256 * 1024;  // resume pumping below 256 KB
+// ── Config ───────────────────────────────────────────
+// Set this to your deployed worker URL, e.g.:
+// 'wss://relay-signal.yourname.workers.dev/ws'
+var WS_URL = '';   // leave blank to use manual SDP only
 
-// ── State ───────────────────────────────────────────
-// peers[pid] = { pc, dc, name, _connected }
-var peers      = {};
-var peerCount  = 0;
+var CHUNK    = 16 * 1024;
+var BUF_HIGH = 1024 * 1024;
+var BUF_LOW  = 256  * 1024;
 
-// file receive state
-var transfers  = {}; // ftid → { pid, name, size, mime, chunks[], got }
-// shared display state
-var fdata      = {}; // ftid → { name, size, dir, pct, blob? }
-// outbound files waiting for 'fr'
-var pendingSend = {}; // ftid → { file, pid }
-
+// ── State ────────────────────────────────────────────
+var peers       = {};   // pid → { pc, dc, name, _connected, _pump? }
+var peerCount   = 0;
+var transfers   = {};   // ftid → { pid, name, size, mime, chunks[], got }
+var fdata       = {};   // ftid → { name, size, dir, pct, blob? }
+var pendingSend = {};   // ftid → { file, pid }
 var queuedFiles = [];
 
+// WebSocket relay
+var ws          = null;
+var myWsId      = null;   // assigned by server on 'welcome'
+var currentRoom = null;   // 6-char room ID
+var wsReady     = false;
+
+// Mode flags
+var REQ_MODE    = false;  // ?req=ROOM — auto-send on file pick
+var REQ_ROOM    = null;
+
+// ICE
 var ICE = {iceServers:[
   {urls:'stun:stun.l.google.com:19302'},
   {urls:'stun:stun1.l.google.com:19302'},
   {urls:'stun:stun.cloudflare.com:3478'}
 ]};
 
-// ── iOS viewport ────────────────────────────────────
+// ── iOS viewport ─────────────────────────────────────
 function setVH(){
   var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.getElementById('app').style.height = h + 'px';
+  document.getElementById('app').style.height = h+'px';
 }
 setVH();
 window.addEventListener('resize', setVH);
 if(window.visualViewport) window.visualViewport.addEventListener('resize', function(){
   setVH();
-  var m = document.getElementById('msgs');
-  if(m) m.scrollTop = m.scrollHeight;
+  var m=document.getElementById('msgs'); if(m) m.scrollTop=m.scrollHeight;
 });
 
-// ── Page URL ────────────────────────────────────────
+// ── Page URL ─────────────────────────────────────────
 var PAGE_URL = (function(){
-  var l = window.location, u = l.protocol+'//'+l.host+l.pathname;
+  var l=window.location, u=l.protocol+'//'+l.host+l.pathname;
   return u.endsWith('/')||u.split('/').pop().includes('.')?u:u+'/';
 })();
 
-// ── Utilities ───────────────────────────────────────
+// ── Boot: read URL params ─────────────────────────────
+(function boot(){
+  var params = new URLSearchParams(window.location.search);
+  var room   = params.get('room') || params.get('r');
+  var req    = params.get('req');
+
+  if(req){
+    REQ_MODE = true;
+    REQ_ROOM = req.toUpperCase();
+    document.body.classList.add('req-mode');
+    document.getElementById('quick-drop').querySelector('.qd-sub').textContent =
+      'Pick the file — it will be sent automatically';
+    // Show req modal after a short delay
+    setTimeout(function(){ openOv('req-ov'); }, 400);
+    if(WS_URL) connectWS(REQ_ROOM);
+  } else if(room){
+    currentRoom = room.toUpperCase();
+    if(WS_URL) setTimeout(function(){ connectWS(currentRoom); autoJoinRoom(); }, 200);
+  }
+
+  // Update logo sub
+  document.getElementById('logo-sub-txt').textContent = WS_URL ? 'p2p · relay' : 'p2p · manual';
+})();
+
+// ── Utilities ─────────────────────────────────────────
 function setStatus(t,c){
   document.getElementById('st').textContent=t;
   document.getElementById('dot').className='dot'+(c?' '+c:'');
@@ -494,21 +606,245 @@ function b64dec(b){ return decodeURIComponent(Array.prototype.map.call(atob(b),f
 function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; return(b/1048576).toFixed(2)+' MB'; }
 function mkId(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);}); }
 function nowTs(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+function isImage(name){ return /\.(jpe?g|png|gif|webp|svg|bmp|ico|avif)$/i.test(name); }
 function fileIcon(n){ var x=n.split('.').pop().toLowerCase(); return {pdf:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',bmp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',zip:'📦',tar:'📦',gz:'📦',js:'💻',ts:'💻',py:'💻',html:'💻',json:'💻',txt:'📝',md:'📝',docx:'📝',xlsx:'📊',csv:'📊'}[x]||'📁'; }
 function connectedPeers(){ return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; }); }
 function anyConnected(){ return connectedPeers().length>0; }
 
-// ── Modals ──────────────────────────────────────────
+// ── Modals ────────────────────────────────────────────
 function openOv(id){ document.getElementById(id).classList.add('open'); }
 function closeOv(id){ document.getElementById(id).classList.remove('open'); }
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape') document.querySelectorAll('.ov.open').forEach(function(o){o.classList.remove('open');});
 });
-['join-ov','code-ov'].forEach(function(id){
-  document.getElementById(id).addEventListener('click',function(e){ if(e.target.id===id) closeOv(id); });
+['join-ov','code-ov','req-ov'].forEach(function(id){
+  var el=document.getElementById(id);
+  if(el) el.addEventListener('click',function(e){ if(e.target.id===id) closeOv(id); });
 });
 
-// ── Chat ─────────────────────────────────────────────
+// ── Tab switcher in host modal ────────────────────────
+function switchTab(tab){
+  var isWs = tab==='ws';
+  document.getElementById('tab-ws-body').style.display  = isWs ? '' : 'none';
+  document.getElementById('tab-sdp-body').style.display = isWs ? 'none' : '';
+  document.getElementById('ans-btn').style.display      = isWs ? 'none' : '';
+  document.getElementById('tab-ws').style.borderBottom  = isWs ? '2px solid #00ff88' : '';
+  document.getElementById('tab-sdp').style.borderBottom = isWs ? '' : '2px solid #00ff88';
+  document.getElementById('tab-ws').style.color         = isWs ? '#00ff88' : '';
+  document.getElementById('tab-sdp').style.color        = isWs ? '' : '#00ff88';
+}
+
+// ── WebSocket relay ───────────────────────────────────
+function connectWS(roomId){
+  if(!WS_URL) return;
+  if(ws && ws.readyState <= 1){ // CONNECTING or OPEN
+    // Already have a WS, just join the room
+    wsJoinRoom(roomId);
+    return;
+  }
+  ws = new WebSocket(WS_URL);
+  ws.onopen = function(){
+    wsReady = true;
+    wsJoinRoom(roomId);
+  };
+  ws.onmessage = function(e){
+    var m; try{ m=JSON.parse(e.data); }catch(ex){ return; }
+    onWsMessage(m);
+  };
+  ws.onclose = function(){
+    wsReady = false;
+    ws = null;
+    // Try reconnect after 3s if we have a room
+    if(currentRoom) setTimeout(function(){ connectWS(currentRoom); }, 3000);
+  };
+  ws.onerror = function(){ ws=null; wsReady=false; };
+  // Ping every 25s to keep alive through Cloudflare's 100s idle timeout
+  setInterval(function(){
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({t:'ping'}));
+  }, 25000);
+}
+
+function wsJoinRoom(roomId){
+  if(!ws||ws.readyState!==1) return;
+  currentRoom = roomId;
+  ws.send(JSON.stringify({t:'join', room:roomId}));
+}
+
+function wsSend(to, payload){
+  if(!ws||ws.readyState!==1) return false;
+  ws.send(JSON.stringify(Object.assign({t:'signal', to:to}, payload)));
+  return true;
+}
+
+function onWsMessage(m){
+  if(m.t==='pong') return;
+
+  if(m.t==='welcome'){
+    myWsId = m.you;
+    updateRoomUI();
+    // Initiate connection to every peer already in the room
+    (m.peers||[]).forEach(function(peerId){
+      wsInitiateConnection(peerId);
+    });
+
+  } else if(m.t==='joined'){
+    // New peer joined our room — they will initiate to us
+    // (the new joiner calls wsInitiateConnection for each existing peer)
+    // Nothing to do here — wait for their offer
+
+  } else if(m.t==='left'){
+    // Peer disconnected from room — DC may already be dead, just clean up
+    var pid = wsPidForWsId(m.who);
+    if(pid) peerGone(pid, true);  // true = keep chat
+
+  } else if(m.t==='signal'){
+    onWsSignal(m);
+  }
+}
+
+function wsPidForWsId(wsId){
+  return Object.keys(peers).find(function(pid){ return peers[pid].wsId===wsId; }) || null;
+}
+
+// We are an existing peer; new joiner wsId just appeared in 'joined' — we DON'T call this.
+// We call this when WE are joining and there are existing peers.
+function wsInitiateConnection(remoteWsId){
+  var pid = mkId(); peerCount++;
+  peers[pid] = {pc:null, dc:null, name:'Peer '+peerCount, _connected:false, wsId:remoteWsId};
+  var pc = makePC(pid); peers[pid].pc = pc;
+  var dc = pc.createDataChannel('relay',{ordered:true});
+  attachDC(pid, dc);
+  pc.createOffer()
+    .then(function(o){ return pc.setLocalDescription(o); })
+    .then(function(){ return gatherICE(pc); })
+    .then(function(desc){
+      wsSend(remoteWsId, {sdp:sdpObj(desc), forPid:pid});
+    })
+    .catch(function(e){ console.error('[RELAY] wsInitiate:',e); delete peers[pid]; });
+}
+
+function onWsSignal(m){
+  // m.from = wsId of sender
+  var fromWsId = m.from;
+  if(m.sdp && m.sdp.type==='offer'){
+    // Someone is offering us a connection
+    var pid = mkId(); peerCount++;
+    peers[pid] = {pc:null, dc:null, name:'Peer '+peerCount, _connected:false, wsId:fromWsId};
+    var pc = makePC(pid); peers[pid].pc = pc;
+    pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
+      .then(function(){ return pc.createAnswer(); })
+      .then(function(a){ return pc.setLocalDescription(a); })
+      .then(function(){ return gatherICE(pc); })
+      .then(function(desc){
+        wsSend(fromWsId, {sdp:sdpObj(desc), forPid:m.forPid});
+      })
+      .catch(function(e){ console.error('[RELAY] wsAnswer:',e); delete peers[pid]; });
+
+  } else if(m.sdp && m.sdp.type==='answer'){
+    // Answer to our offer
+    var pid2 = m.forPid || wsPidForWsId(fromWsId);
+    if(!pid2||!peers[pid2]) return;
+    peers[pid2].wsId = fromWsId;
+    peers[pid2].pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
+      .catch(function(e){ console.error('[RELAY] wsApplyAnswer:',e); });
+  }
+}
+
+function updateRoomUI(){
+  if(!currentRoom) return;
+  var pill = document.getElementById('room-pill');
+  var el   = document.getElementById('room-id-el');
+  pill.style.display = 'flex';
+  el.textContent = currentRoom;
+  // Update room link display in modal
+  var link = roomLink(currentRoom);
+  var lel  = document.getElementById('room-link-el');
+  if(lel) lel.textContent = link;
+  // Draw room QR
+  var qrWrap = document.getElementById('room-qr-wrap');
+  if(qrWrap) drawQR(qrWrap, link);
+  // Update ws status
+  var wslbl = document.getElementById('ws-status-lbl');
+  if(wslbl) wslbl.textContent = 'Waiting for peer… room: '+currentRoom;
+}
+
+function roomLink(room){
+  return PAGE_URL + '?room=' + room;
+}
+
+function copyRoomLink(){
+  if(!currentRoom){ toast('No room yet','er'); return; }
+  navigator.clipboard.writeText(roomLink(currentRoom)).then(function(){ toast('Room link copied','ok'); });
+}
+
+function autoJoinRoom(){
+  // Called when ?room= is in URL — show a banner and auto-join
+  var lbl = document.getElementById('ws-status-lbl');
+  if(lbl) lbl.textContent = 'Connecting to room '+currentRoom+'…';
+  updateRoomUI();
+  // Start a host so we have an offer ready for whoever else is in the room
+  // Actually the WS handles it — once WS connects + joins, onWsMessage handles the rest
+  setStatus('connecting…','wait');
+}
+
+// ── Request-a-file mode ───────────────────────────────
+function startRequestFile(){
+  if(!WS_URL){ toast('Requires WebSocket relay — set WS_URL','er'); return; }
+  // Generate a room, connect to it, show a shareable "req" link
+  var room = randomRoomId();
+  currentRoom = room;
+  connectWS(room);
+  var reqLink = PAGE_URL + '?req=' + room;
+  // Show the host modal in WS tab with the req link
+  var lel = document.getElementById('room-link-el');
+  if(lel) lel.textContent = reqLink;
+  var qrWrap = document.getElementById('room-qr-wrap');
+  if(qrWrap) drawQR(qrWrap, reqLink);
+  var lbl = document.getElementById('ws-status-lbl');
+  if(lbl) lbl.textContent = 'Share this link — friend picks a file, it sends automatically';
+  var pill = document.getElementById('room-pill');
+  if(pill){ pill.style.display='flex'; document.getElementById('room-id-el').textContent=room; }
+  switchTab('ws');
+  openOv('host-ov');
+}
+
+function randomRoomId(){
+  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', id='';
+  for(var i=0;i<6;i++) id+=chars[Math.floor(Math.random()*chars.length)];
+  return id;
+}
+
+// Request-a-file: visitor picks file
+function reqPickFile(){ document.getElementById('req-file-input').click(); }
+function reqFileChosen(e){
+  var files = Array.from(e.target.files); if(!files.length) return;
+  closeOv('req-ov');
+  // If already connected, send immediately; else queue and auto-join
+  queuedFiles = files;
+  renderQueuedFiles();
+  if(anyConnected()){
+    flushQueue(connectedPeers()[0]);
+  } else if(REQ_ROOM && WS_URL){
+    connectWS(REQ_ROOM);
+    setStatus('connecting…','wait');
+    // Files will flush when peer connects via onPeerConnected
+  }
+  e.target.value='';
+}
+
+// ── Sidebar toggle ────────────────────────────────────
+function toggleSidebar(){
+  // Mobile
+  var sb=document.getElementById('sidebar');
+  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+  else sb.classList.toggle('expanded');
+}
+function toggleSidebarDesktop(){
+  var sb=document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+}
+
+// ── Chat ──────────────────────────────────────────────
 function addMsg(text,who,fromName){
   var el=document.createElement('div');
   el.className='msg '+(who||'sys');
@@ -516,6 +852,25 @@ function addMsg(text,who,fromName){
   el.innerHTML=lbl+'<div class="bubble">'+esc(text)+'</div><div class="ts">'+nowTs()+'</div>';
   var m=document.getElementById('msgs');
   m.appendChild(el); m.scrollTop=m.scrollHeight;
+}
+
+function addImgMsg(blob, name, who, fromName){
+  var url = URL.createObjectURL(blob);
+  var el  = document.createElement('div');
+  el.className = 'msg '+(who||'sys');
+  var lbl=(fromName&&who==='them')?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
+  el.innerHTML = lbl
+    +'<div class="img-bubble" onclick="openImgFull(this)">'
+    +'<img src="'+url+'" alt="'+esc(name)+'" loading="lazy">'
+    +'</div>'
+    +'<div class="ts">'+esc(name)+'  '+nowTs()+'</div>';
+  var m=document.getElementById('msgs');
+  m.appendChild(el); m.scrollTop=m.scrollHeight;
+}
+
+function openImgFull(el){
+  var img=el.querySelector('img'); if(!img) return;
+  window.open(img.src,'_blank');
 }
 
 function sendChat(){
@@ -533,7 +888,7 @@ function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHei
 function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
 function targetPid(){ var v=document.getElementById('peer-target').value; return (v&&v!=='all')?v:null; }
 
-// ── Peer list UI ─────────────────────────────────────
+// ── Peer list UI ──────────────────────────────────────
 function renderPeers(){
   var list=document.getElementById('peers-list');
   var sec=document.getElementById('peers-sec');
@@ -574,35 +929,38 @@ function updateStatus(){
 function kickPeer(pid){
   var p=peers[pid]; if(!p) return;
   try{ p.pc.close(); }catch(e){}
-  peerGone(pid);
+  peerGone(pid, true);
 }
 
-function peerGone(pid){
+// keepChat=true: don't clear messages when last peer leaves
+function peerGone(pid, keepChat){
   delete peers[pid];
   renderPeers(); updateStatus();
-  if(!anyConnected()) goIdle();
+  if(!anyConnected() && !keepChat) goIdle();
+  // if no peers but keepChat: stay in chat view, disable input
+  if(!anyConnected() && keepChat){
+    document.getElementById('ci').disabled = true;
+    addMsg('— disconnected — chat history preserved —');
+  }
 }
 
-// ── RTCPeerConnection factory ────────────────────────
-// role: 'host' (created offer) or 'guest' (received offer)
+// ── RTCPeerConnection ─────────────────────────────────
 function makePC(pid){
   var pc=new RTCPeerConnection(ICE);
-
   pc.oniceconnectionstatechange=function(){
     var s=pc.iceConnectionState;
     console.log('[RELAY] ICE',pid,s);
     if((s==='connected'||s==='completed')&&peers[pid]&&!peers[pid]._connected){
       peers[pid]._connected=true;
-      onPeerConnected(pid);
+      finishConnect(pid);
     } else if(s==='failed'){
-      toast((peers[pid]?peers[pid].name:'Peer')+' connection failed','er');
-      peerGone(pid);
+      toast((peers[pid]?peers[pid].name:'Peer')+' failed','er');
+      peerGone(pid, true);
     } else if((s==='disconnected'||s==='closed')&&peers[pid]){
       addMsg('✕ '+peers[pid].name+' left');
-      peerGone(pid);
+      peerGone(pid, true);
     }
   };
-
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
   return pc;
 }
@@ -610,16 +968,21 @@ function makePC(pid){
 function attachDC(pid,ch){
   peers[pid].dc=ch;
   ch.binaryType='arraybuffer';
-  // backpressure for file pump
   ch.bufferedAmountLowThreshold=BUF_LOW;
   ch.onmessage=function(e){
     if(typeof e.data==='string') onText(pid,e.data);
     else onBin(pid,e.data);
   };
   ch.onbufferedamountlow=function(){
-    // Resume any paused pump for this peer
     var pump=peers[pid]&&peers[pid]._pump;
     if(pump){ delete peers[pid]._pump; pump(); }
+  };
+  // DC can open before ICE reports 'connected' (e.g. on loopback)
+  ch.onopen=function(){
+    if(peers[pid]&&!peers[pid]._connected){
+      peers[pid]._connected=true;
+      finishConnect(pid);
+    }
   };
 }
 
@@ -635,186 +998,46 @@ function gatherICE(pc){
 }
 function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 
-// ── Peer connected ───────────────────────────────────
-function onPeerConnected(pid){
-  var p=peers[pid];
-  // Ensure DC is set up (for host side, it was created before the PC)
-  if(!p.dc||p.dc.readyState!=='open'){
-    // DC not open yet — it fires onopen shortly; goConnected happens in dc.onopen
-    p.dc.addEventListener('open',function(){ finishConnect(pid); });
-    return;
-  }
-  finishConnect(pid);
-}
-
+// ── finishConnect: first time a peer's DC + ICE are ready ────────────
 function finishConnect(pid){
   var p=peers[pid]; if(!p) return;
-
-  // ── Mesh introduction: introduce new peer to all existing connected peers ──
-  // For each existing peer EB, we:
-  //   1. Create a new PC slot for EB↔pid
-  //   2. Generate an offer
-  //   3. Send offer to pid (via our DC to pid) tagged with EB's name/id
-  //   4. Send offer to EB (via our DC to EB) tagged with pid
-  // Each side creates a PC and answers, returns answer back through us.
-  // This is signal-relay: we're the SFU for signalling only.
-  introNewPeer(pid);
-
-  // Switch to chat view if first connection
+  // Introduce new peer to all existing connected peers (mesh)
+  introNewPeerMesh(pid);
+  // Show chat if on splash
   if(document.getElementById('splash').style.display!=='none') showChatUI();
-
-  // Show in sidebar
   renderPeers(); updateStatus();
-
+  // Enable chat input
+  document.getElementById('ci').disabled=false;
   // Banner
-  var b=document.createElement('div');
-  b.style.cssText='position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
-  b.textContent='⚡ '+p.name+' joined';
-  document.body.appendChild(b);
-  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
-
+  showBanner('⚡ '+p.name+' joined');
   addMsg('⚡ '+p.name+' joined');
   setTimeout(function(){ flushQueue(pid); },300);
 }
 
-// ── Mesh signalling ──────────────────────────────────
-// Send offers from each existing peer to the new peer,
-// so every pair end up directly connected.
-function introNewPeer(newPid){
-  var existing=connectedPeers().filter(function(pid){ return pid!==newPid; });
-  existing.forEach(function(ePid){
-    // Create a virtual "bridge" PC on our node representing ePid↔newPid link
-    // We generate the offer here and relay it to both sides.
-    // The two sides will create their own real PCs when they receive the sig-offer.
-    var relayId=mkId();
-    var bridgePC=new RTCPeerConnection(ICE);
-    // We don't need a real DC on the bridge; this is purely for offer generation
-    bridgePC.createDataChannel('r');
-    bridgePC.createOffer().then(function(o){
-      return bridgePC.setLocalDescription(o);
-    }).then(function(){
-      return gatherICE(bridgePC);
-    }).then(function(desc){
-      // Send offer to new peer: "ePid wants to connect to you"
-      peers[newPid].dc.send(JSON.stringify({
-        t:'sig-offer', from:ePid, fromName:peers[ePid].name,
-        relay:relayId, sdp:sdpObj(desc)
-      }));
-      // Send offer to existing peer: "newPid wants to connect to you"
-      peers[ePid].dc.send(JSON.stringify({
-        t:'sig-offer', from:newPid, fromName:peers[newPid].name,
-        relay:relayId, sdp:sdpObj(desc)
-      }));
-      // Clean up bridge PC
-      setTimeout(function(){ try{bridgePC.close();}catch(e){} },10000);
-    }).catch(function(e){ console.error('[RELAY] bridge offer:',e); });
-  });
+function showBanner(text){
+  var b=document.createElement('div');
+  b.style.cssText='position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
+  b.textContent=text; document.body.appendChild(b);
+  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
 }
 
-// Handle incoming sig-offer: create PC, answer, send back via relay node (us)
-// But wait — with no server, the answer has to go back through the introducer.
-// The introducer is the peer we received the sig-offer from.
-// So: when we receive sig-offer from introducerPid, we:
-//   create PC for `from`, set remote desc = sdp, create answer, send sig-answer back to introducerPid
-function handleSigOffer(introducerPid, m){
-  var fromPid=m.from;
-  if(peers[fromPid]) return; // already connected
-  peerCount++;
-  peers[fromPid]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
-  var pc=makePC(fromPid);
-  peers[fromPid].pc=pc;
-  pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
-    .then(function(){ return pc.createAnswer(); })
-    .then(function(a){ return pc.setLocalDescription(a); })
-    .then(function(){ return gatherICE(pc); })
-    .then(function(desc){
-      // Send answer back through the introducer
-      peers[introducerPid].dc.send(JSON.stringify({
-        t:'sig-answer', for:fromPid, relay:m.relay, sdp:sdpObj(desc)
-      }));
-    })
-    .catch(function(e){ console.error('[RELAY] handleSigOffer:',e); delete peers[fromPid]; });
-}
-
-// Handle incoming sig-answer: apply to the PC we hold for `for`
-// But we're the introducer here — we got this answer from one side,
-// and need to deliver it to the other side.
-function handleSigAnswer(fromPid, m){
-  // m.for = the pid that generated the offer and needs this answer
-  var targetPid2=m.for;
-  if(peers[targetPid2]&&peers[targetPid2].dc&&peers[targetPid2].dc.readyState==='open'){
-    // Relay it to the target
-    peers[targetPid2].dc.send(JSON.stringify({
-      t:'sig-answer-direct', sdp:m.sdp, from:fromPid,
-      fromName:peers[fromPid]?peers[fromPid].name:('Peer '+fromPid.slice(0,4))
-    }));
-  }
-}
-
-// Handle answer delivered directly to us (we generated the offer)
-function handleSigAnswerDirect(introducerPid, m){
-  var fromPid=m.from;
-  if(peers[fromPid]) return; // already wired
-  peerCount++;
-  peers[fromPid]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
-  var pc=makePC(fromPid);
-  peers[fromPid].pc=pc;
-  // We need to set remote desc — but we never had a local offer here!
-  // The bridge PC generated the offer. We need to create a matching offer ourselves.
-  // Revised approach: when we receive sig-offer, we're the ANSWERER.
-  // The msg.sdp was from the bridge. We answer it. Done.
-  // The bridge owner then gets our answer and forwards it.
-  // BUT the bridge has already closed! We need a live PC each side.
-  //
-  // Revised mesh design: simpler — each peer generates its OWN offer
-  // for each new peer it's being introduced to. No bridge.
-  // See handleSigAnswerDirect2 below.
-  pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
-    .then(function(){
-      // This was an answer — not an offer. We need the matching offer.
-      // This path is hit if we sent a sig-offer-self.
-      // Handled in the new simpler flow below.
-    })
-    .catch(function(e){ console.error('[RELAY] sig-answer-direct:',e); delete peers[fromPid]; });
-}
-
-// ─────────────────────────────────────────────────────
-// Simpler mesh: each peer generates their own offer for introduction.
-// Flow when C joins via A:
-//   A → C: "here are all existing peers: [B, D, ...]"
-//   A → B: "C wants to meet you, C says hi"  (no SDP yet)
-//   B creates offer for C, sends it to A as sig-offer-b
-//   A forwards to C as sig-offer-b
-//   C answers, sends sig-answer-b back to A
-//   A forwards to B
-//   B applies answer → B↔C connected
-// ─────────────────────────────────────────────────────
-
-// When C connects to A, A sends C the list of existing peers
-// and sends each existing peer a "meet C" message.
-function introNewPeerV2(newPid){
-  var existing=connectedPeers().filter(function(pid){ return pid!==newPid; });
+// ── Mesh intro (DC signalling) ────────────────────────
+function introNewPeerMesh(newPid){
+  var existing=connectedPeers().filter(function(p){ return p!==newPid; });
   if(!existing.length) return;
-
-  // Tell new peer who else exists (so it knows names)
-  var peerList=existing.map(function(pid){ return {pid:pid,name:peers[pid].name}; });
+  var peerList=existing.map(function(p){ return {pid:p,name:peers[p].name}; });
   peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:peerList}));
-
-  // Tell each existing peer to connect to new peer
   existing.forEach(function(ePid){
-    peers[ePid].dc.send(JSON.stringify({
-      t:'meet', pid:newPid, name:peers[newPid].name
-    }));
+    peers[ePid].dc.send(JSON.stringify({t:'meet',pid:newPid,name:peers[newPid].name}));
   });
 }
 
-// ── Incoming messages ────────────────────────────────
+// ── Incoming DC messages ──────────────────────────────
 function onText(pid,raw){
   var p=peers[pid];
   var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
 
   if(m.t==='chat'){
-    // Relay to other peers (mesh broadcast via introducer until direct links form)
     addMsg(m.text,'them',p?p.name:null);
 
   } else if(m.t==='fa'){
@@ -842,121 +1065,84 @@ function onText(pid,raw){
 
   } else if(m.t==='fe'){
     var ft=transfers[m.id]; if(!ft) return;
-    fdata[m.id].blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
-    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
+    var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+    fdata[m.id].blob=blob; fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
     updateFileRow(m.id);
-    addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
+    // Show image inline in chat
+    if(isImage(ft.name)){
+      addImgMsg(blob, ft.name, 'them', p?p.name:null);
+    } else {
+      addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
+    }
     toast('Received: '+ft.name,'ok');
     delete transfers[m.id];
 
-  // ── Mesh signalling ──
+  // ── Mesh DC signalling ──
   } else if(m.t==='meet'){
-    // An existing peer tells us to connect to a new peer
-    // We are the "existing" peer; we need to create an offer for m.pid
-    handleMeet(pid, m);
-
+    handleMeet(pid,m);
   } else if(m.t==='peer-list'){
-    // We are the new peer; A is telling us who else is connected
-    // We don't need to do anything — A will tell them to "meet" us
-    // and they'll send us offers via A
-    console.log('[RELAY] peer-list from',pid,m.peers);
-
+    console.log('[RELAY] peer-list',m.peers);
   } else if(m.t==='sig-offer'){
-    // An existing peer sent us an offer (relayed through our shared connection)
     handleRelayedOffer(pid,m);
-
   } else if(m.t==='sig-answer'){
-    // We introduced two peers; one is sending us their answer to forward
     handleRelayedAnswer(pid,m);
+  } else if(m.t==='sig-answer-apply'){
+    handleSigAnswerApply(pid,m);
   }
 }
 
-// Existing peer received "meet newPid": create offer, send via introducer
-function handleMeet(introducerPid, m){
+// ── Mesh DC signalling handlers ───────────────────────
+function handleMeet(introducerPid,m){
   var newPid=m.pid;
-  if(peers[newPid]) return; // already know them
+  if(peers[newPid]) return;
   peerCount++;
   peers[newPid]={pc:null,dc:null,name:m.name||('Peer '+peerCount),_connected:false};
-  var pc=makePC(newPid);
-  peers[newPid].pc=pc;
-  // Create DC (we're the offerer)
-  var dc2=pc.createDataChannel('relay',{ordered:true});
-  attachDC(newPid,dc2);
+  var pc=makePC(newPid); peers[newPid].pc=pc;
+  var dc2=pc.createDataChannel('relay',{ordered:true}); attachDC(newPid,dc2);
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      // Send offer through the introducer to reach newPid
-      peers[introducerPid].dc.send(JSON.stringify({
-        t:'sig-offer', from:newPid, // tell newPid this is FROM us (but we don't have a stable peer id exposed)
-        fromActual: Object.keys(peers).filter(function(p2){ return peers[p2].pc===pc; })[0] || newPid,
-        sdp:sdpObj(desc)
-      }));
+      peers[introducerPid].dc.send(JSON.stringify({t:'sig-offer',forPid:newPid,sdp:sdpObj(desc)}));
     })
-    .catch(function(e){ console.error('[RELAY] handleMeet offer:',e); delete peers[newPid]; });
+    .catch(function(e){ console.error('[RELAY] meet offer:',e); delete peers[newPid]; });
 }
 
-// New peer received offer relayed from an existing peer (via introducer)
-function handleRelayedOffer(introducerPid, m){
-  // m.from = the newPid on the other side (from that peer's perspective it's us being new)
-  // Actually: the existing peer (ePid) sent us an offer via introducer.
-  // m.from = newPid slot identifier on ePid's side
-  // We create a PC for the existing peer, answer, send back via introducer
-  var offerFrom = m.fromActual || m.from;
-  if(peers[offerFrom]&&peers[offerFrom]._connected) return;
-  if(!peers[offerFrom]){
-    peerCount++;
-    peers[offerFrom]={pc:null,dc:null,name:m.fromName||('Peer '+peerCount),_connected:false};
-  }
-  var pc=makePC(offerFrom);
-  peers[offerFrom].pc=pc;
+function handleRelayedOffer(introducerPid,m){
+  var offerFrom=m.forPid;
+  if(!offerFrom||peers[offerFrom]) return;
+  peerCount++;
+  peers[offerFrom]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
+  var pc=makePC(offerFrom); peers[offerFrom].pc=pc;
   pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
     .then(function(){ return pc.createAnswer(); })
     .then(function(a){ return pc.setLocalDescription(a); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      // Send answer back through introducer, addressed to the offerer
-      peers[introducerPid].dc.send(JSON.stringify({
-        t:'sig-answer', forActual:offerFrom, sdp:sdpObj(desc)
-      }));
+      peers[introducerPid].dc.send(JSON.stringify({t:'sig-answer',forPid:offerFrom,sdp:sdpObj(desc)}));
     })
-    .catch(function(e){ console.error('[RELAY] handleRelayedOffer:',e); delete peers[offerFrom]; });
+    .catch(function(e){ console.error('[RELAY] relayedOffer:',e); delete peers[offerFrom]; });
 }
 
-// Introducer received an answer from new peer; relay it to the existing peer
-function handleRelayedAnswer(fromPid, m){
-  var targetPid2=m.forActual;
+function handleRelayedAnswer(fromPid,m){
+  var targetPid2=m.forPid;
   if(!targetPid2||!peers[targetPid2]) return;
   var tdc=peers[targetPid2].dc;
   if(!tdc||tdc.readyState!=='open') return;
-  tdc.send(JSON.stringify({ t:'sig-answer-apply', sdp:m.sdp, from:fromPid, fromName:peers[fromPid]?peers[fromPid].name:'?' }));
+  tdc.send(JSON.stringify({t:'sig-answer-apply',sdp:m.sdp,from:fromPid,fromName:peers[fromPid]?peers[fromPid].name:'?'}));
 }
 
-// ── sig-answer-apply ──
-// Add to onText:
-var _origOnText=onText;
-// Patch in by extending onText within itself via the 'else if' chain above
-// We add sig-answer-apply inside onText directly:
-
-// Overwrite onText to include sig-answer-apply
-onText = function(pid, raw){
-  var p=peers[pid];
-  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
-
-  if(m.t==='sig-answer-apply'){
-    // We are the existing peer; apply the answer from new peer
-    var fromPid2=m.from;
-    var pc2=peers[fromPid2]&&peers[fromPid2].pc;
-    if(!pc2){ return; }
-    if(pc2.signalingState==='have-local-offer'){
-      pc2.setRemoteDescription(new RTCSessionDescription(m.sdp))
-        .catch(function(e){ console.error('[RELAY] sig-answer-apply:',e); });
-    }
-  } else {
-    _origOnText(pid, raw);
+function handleSigAnswerApply(introducerPid,m){
+  var fromPid2=m.from;
+  var pc2=peers[fromPid2]&&peers[fromPid2].pc;
+  if(!pc2) return;
+  if(pc2.signalingState==='have-local-offer'){
+    pc2.setRemoteDescription(new RTCSessionDescription(m.sdp))
+      .catch(function(e){ console.error('[RELAY] sigAnswerApply:',e); });
   }
-};
+}
 
+// ── Binary chunks ──────────────────────────────────────
 function onBin(pid,buf){
   var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
   var ft=transfers[ftid]; if(!ft) return;
@@ -968,7 +1154,7 @@ function onBin(pid,buf){
   if(bar) bar.style.width=pct+'%';
 }
 
-// ── File announce/accept ──────────────────────────────
+// ── File announce / respond ───────────────────────────
 function announceFile(file,pid){
   var targets=pid?[pid]:connectedPeers();
   if(!targets.length){ toast('Not connected','er'); return; }
@@ -998,8 +1184,7 @@ function showFileRequest(pid,m){
       +'<button class="btn primary" onclick="respondFile(\''+m.id+'\',\''+pid+'\',true)">✓ Accept</button>'
       +'<button class="btn danger"  onclick="respondFile(\''+m.id+'\',\''+pid+'\',false)">✕ Decline</button>'
     +'</div>';
-  var msgs=document.getElementById('msgs');
-  msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+  var msgs=document.getElementById('msgs'); msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
 }
 
 function respondFile(ftid,pid,accept){
@@ -1012,17 +1197,14 @@ function respondFile(ftid,pid,accept){
   if(p&&p.dc&&p.dc.readyState==='open') p.dc.send(JSON.stringify({t:accept?'fr':'fd',id:ftid}));
 }
 
-// ── File sending — bufferedamountlow backpressure ────
+// ── File sending — backpressure via bufferedAmountLow ─
 function startSendingFile(ftid,file,pid){
   var p=peers[pid];
   if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
   p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,size:file.size,mime:file.type}));
-
-  // Pad ftid to exactly 36 bytes for binary header
   var idStr=(ftid+'                                    ').slice(0,36);
   var idBytes=new TextEncoder().encode(idStr);
   var offset=0;
-
   function pump(){
     if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted','er'); return; }
     if(offset>=file.size){
@@ -1030,40 +1212,37 @@ function startSendingFile(ftid,file,pid){
       if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
       updateFileRow(ftid);
       addMsg('✓ '+file.name+' sent to '+p.name,'sys');
+      // If sender is an image, show it in chat too
+      if(isImage(file.name)){
+        addImgMsg(file, file.name, 'me', null);
+      }
       return;
     }
-    // Backpressure: register callback and yield if buffer is high
-    if(p.dc.bufferedAmount>=BUF_HIGH){
-      peers[pid]._pump=pump; // dc.onbufferedamountlow will call this
-      return;
-    }
-    // Use File.slice + arrayBuffer() — Promise-based, survives tab switch
+    if(p.dc.bufferedAmount>=BUF_HIGH){ peers[pid]._pump=pump; return; }
     var slice=file.slice(offset,offset+CHUNK);
     slice.arrayBuffer().then(function(ab){
       var out=new Uint8Array(36+ab.byteLength);
-      out.set(idBytes,0);
-      out.set(new Uint8Array(ab),36);
+      out.set(idBytes,0); out.set(new Uint8Array(ab),36);
       try{
         p.dc.send(out.buffer);
         offset+=ab.byteLength;
         if(fdata[ftid]) fdata[ftid].pct=Math.min(99,Math.round(offset/file.size*100));
         var bar=document.getElementById('fb-'+ftid);
         if(bar) bar.style.width=(fdata[ftid]?fdata[ftid].pct:0)+'%';
-        // Yield to event loop between chunks — critical for loopback/same-device
-        setTimeout(pump,0);
+        setTimeout(pump,0); // yield — critical for same-device loopback
       }catch(e){ toast('Send error: '+e.message,'er'); }
     }).catch(function(e){ toast('Read error: '+e.message,'er'); });
   }
   pump();
 }
 
-// ── Sidebar drag/drop ────────────────────────────────
+// ── Sidebar drag/drop ─────────────────────────────────
 function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
 function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f,targetPid()); }); }
 function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
 
-// ── Splash drag/drop ─────────────────────────────────
+// ── Splash drag/drop ──────────────────────────────────
 function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
 function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
 function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
@@ -1092,7 +1271,6 @@ function renderQueuedFiles(){
   var s=anyConnected()?'⚡ Connected — sending now…':'⏳ Waiting for peer to connect…';
   status.textContent=queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+s;
 }
-
 function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
 
 function flushQueue(pid){
@@ -1101,7 +1279,7 @@ function flushQueue(pid){
   files.forEach(function(f){ announceFile(f,pid); });
 }
 
-// ── UI transitions ───────────────────────────────────
+// ── UI transitions ────────────────────────────────────
 function showChatUI(){
   document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
   document.getElementById('splash').style.display='none';
@@ -1135,16 +1313,16 @@ function goIdle(){
   fdata={}; transfers={}; pendingSend={};
 }
 
-function toggleSidebar(){
-  var sb=document.getElementById('sidebar');
-  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
-  else sb.classList.toggle('expanded');
-}
-
-// ── HOST (manual or auto) ────────────────────────────
+// ── HOST (manual SDP) ─────────────────────────────────
 var _pendingHostPid=null;
 
 function startHost(){
+  // Reset modal fields for reuse
+  document.getElementById('offer-out').value='';
+  document.getElementById('ans-inp').value='';
+  var btn=document.getElementById('ans-btn');
+  btn.disabled=false; btn.textContent='Complete →'; btn.style.display='';
+
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
   document.getElementById('conn-idle-hint').style.display='none';
   setStatus('gathering…','wait');
@@ -1154,9 +1332,7 @@ function startHost(){
   var pc=makePC(pid); peers[pid].pc=pc;
   _pendingHostPid=pid;
 
-  // Create DC now (host side)
-  var dc2=pc.createDataChannel('relay',{ordered:true});
-  attachDC(pid,dc2);
+  var dc2=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc2);
 
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
@@ -1167,6 +1343,8 @@ function startHost(){
       showSharePanel();
       setStatus('waiting…','wait');
       document.getElementById('bd').style.display='';
+      // Default to SDP tab for manual flow; WS tab if relay available
+      switchTab(WS_URL&&currentRoom?'ws':'sdp');
       openOv('host-ov');
     })
     .catch(function(e){
@@ -1176,6 +1354,13 @@ function startHost(){
       document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
       if(!anyConnected()) setStatus('idle');
     });
+
+  // Also create a room if WS is configured
+  if(WS_URL){
+    if(!currentRoom){ currentRoom=randomRoomId(); }
+    connectWS(currentRoom);
+    updateRoomUI();
+  }
 }
 
 function addPeer(){
@@ -1214,7 +1399,7 @@ function applyAnswer(){
   var p=peers[pid];
   if(!p){ toast('Session expired — create a new one','er'); return; }
   if(p.pc.iceConnectionState==='connected'||p.pc.iceConnectionState==='completed'){ closeOv('host-ov'); return; }
-  if(p.pc.signalingState==='stable'){ toast('Session expired — create a new one','er'); return; }
+  if(p.pc.signalingState==='stable'){ toast('Session expired','er'); return; }
   var btn=document.getElementById('ans-btn');
   btn.disabled=true; btn.textContent='⏳ Connecting…';
   try{
@@ -1225,7 +1410,7 @@ function applyAnswer(){
   }catch(e){ toast('Could not read answer','er'); btn.disabled=false; btn.textContent='Complete →'; }
 }
 
-// ── JOINER ──────────────────────────────────────────
+// ── JOINER (manual SDP) ───────────────────────────────
 function doJoin(){
   var raw=document.getElementById('join-inp').value.trim();
   if(!raw){ toast('Paste the offer code','er'); return; }
@@ -1247,8 +1432,7 @@ function doJoin(){
       document.getElementById('bd').style.display='';
     })
     .catch(function(e){
-      console.error('[RELAY] doJoin:',e);
-      toast('Error: '+e.message,'er');
+      console.error('[RELAY] doJoin:',e); toast('Error: '+e.message,'er');
       delete peers[pid];
       if(!anyConnected()){ setStatus('idle'); document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; }); }
     });
@@ -1259,26 +1443,12 @@ function copyCode(){ navigator.clipboard.writeText(document.getElementById('code
 function doDisconnectAll(){
   Object.keys(peers).forEach(function(pid){ try{peers[pid].pc.close();}catch(e){} });
   peers={}; _pendingHostPid=null;
+  if(ws){ try{ws.close();}catch(e){} ws=null; wsReady=false; currentRoom=null; }
+  document.getElementById('room-pill').style.display='none';
   setStatus('idle'); goIdle();
 }
 
-// ── Finalize peer connection + mesh intro ─────────────
-// Replace finishConnect to use introNewPeerV2
-function finishConnect(pid){
-  var p=peers[pid]; if(!p) return;
-  introNewPeerV2(pid);
-  if(document.getElementById('splash').style.display!=='none') showChatUI();
-  renderPeers(); updateStatus();
-  var b=document.createElement('div');
-  b.style.cssText='position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#00ff88;color:#000;font-weight:700;font-size:13px;padding:10px 22px;border-radius:4px;z-index:300;white-space:nowrap;box-shadow:0 4px 20px rgba(0,255,136,.35);transition:opacity .4s,transform .4s';
-  b.textContent='⚡ '+p.name+' joined';
-  document.body.appendChild(b);
-  setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
-  addMsg('⚡ '+p.name+' joined');
-  setTimeout(function(){ flushQueue(pid); },300);
-}
-
-// ── FILE LIST UI ─────────────────────────────────────
+// ── File list UI ──────────────────────────────────────
 function addFileRow(id){
   var list=document.getElementById('flist');
   var empty=list.querySelector('.empty'); if(empty) empty.remove();
@@ -1313,7 +1483,7 @@ function dlFile(id){
   setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
 }
 
-// ── QR CODE ──────────────────────────────────────────
+// ── QR code ───────────────────────────────────────────
 function drawQR(container,text){
   container.innerHTML='';
   try{
