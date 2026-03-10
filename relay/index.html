@@ -184,9 +184,9 @@ background:#111;flex-shrink:0;
 #ci-file{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
 
 /* MOBILE SIDEBAR TOGGLE */
-#sb-toggle{display:none;padding:6px 10px;font-size:16px;background:transparent;
+#sb-toggle{display:flex;padding:6px 10px;font-size:16px;background:transparent;
 border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
--webkit-tap-highlight-color:transparent}
+align-items:center;-webkit-tap-highlight-color:transparent}
 #sb-toggle:hover{color:#00ff88;border-color:#00ff88}
 
 /* MODALS */
@@ -219,7 +219,6 @@ main{flex-direction:column}
 #sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
 #sidebar.expanded{max-height:60dvh}
 #sidebar.hidden{display:none}
-#sb-toggle{display:flex}
 .btn{min-height:44px}
 .splash-steps{grid-template-columns:1fr}
 }
@@ -239,12 +238,6 @@ main{flex-direction:column}
 /* SIDEBAR COLLAPSIBLE (desktop) */
 #sidebar{transition:width .2s,min-width .2s}
 #sidebar.collapsed{width:0;min-width:0;overflow:hidden;border-right:none}
-#sb-desktop-toggle{
-display:flex;padding:6px 10px;font-size:14px;background:transparent;
-border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;
-min-height:34px;align-items:center;-webkit-tap-highlight-color:transparent;
-}
-#sb-desktop-toggle:hover{color:#00ff88;border-color:#00ff88}
 
 /* IMAGE IN CHAT */
 .img-bubble{max-width:240px;border-radius:6px;overflow:hidden;margin-top:4px;cursor:pointer;border:1px solid #222}
@@ -273,7 +266,6 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
   <header>
     <div style="display:flex;align-items:center;gap:8px">
       <button id="sb-toggle" onclick="toggleSidebar()">☰</button>
-      <button id="sb-desktop-toggle" onclick="toggleSidebarDesktop()" title="Toggle panel">☰</button>
       <span class="logo">RELAY</span>
       <span class="logo-sub" id="logo-sub-txt">p2p</span>
     </div>
@@ -496,50 +488,51 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
 
 <div id="toast"></div>
 
+<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
-//  RELAY — serverless mesh P2P  (WebSocket-assisted signalling)
+//  RELAY — serverless mesh P2P
+//
+//  Signalling:  Ably pub/sub  (token fetched from Cloudflare Worker)
+//  Transport:   WebRTC DataChannels  (peer-to-peer, Ably not involved)
 //
 //  Modes:
-//    Normal      — create/join sessions manually or via room link
-//    ?room=XXXX  — auto-join a room (peer invited via link)
-//    ?req=XXXX   — "request a file" mode — pick file, auto-send
+//    Normal     — create/join via room link or manual SDP
+//    ?room=XXXX — auto-join room on page load
+//    ?req=XXXX  — "request a file" — pick file, auto-send
 //
-//  WebSocket Worker (optional but recommended):
-//    Set WS_URL to your deployed relay-worker URL.
-//    Falls back to manual SDP exchange if WS is unavailable.
-//
-//  DC message types:  chat | fa | fr | fd | fs | fe
-//                     meet | peer-list | sig-offer | sig-answer | sig-answer-apply
-//  Binary frames: [36-byte padded transfer-ID][chunk bytes]
+//  DC message types: chat | fa | fr | fd | fs | fe
+//                    meet | peer-list | sig-offer | sig-answer | sig-answer-apply
+//  Binary frames: [36-byte padded ftid][chunk bytes]
 // ═══════════════════════════════════════════════════════════════════
 
-// ── Config ───────────────────────────────────────────
-// Set this to your deployed worker URL, e.g.:
-// 'wss://relay-signal.yourname.workers.dev/ws'
-var WS_URL = '';   // leave blank to use manual SDP only
+// ── Config ────────────────────────────────────────────────────────
+// After deploying relay-worker, set this to your worker URL:
+var AUTH_URL = 'https://snowy-feather-5c8c.markksbamford.workers.dev/token';
 
 var CHUNK    = 16 * 1024;
 var BUF_HIGH = 1024 * 1024;
 var BUF_LOW  = 256  * 1024;
 
-// ── State ────────────────────────────────────────────
-var peers       = {};   // pid → { pc, dc, name, _connected, _pump? }
+// ── State ─────────────────────────────────────────────────────────
+var peers       = {};  // pid → { pc, dc, name, _connected, _pump?, ablyId? }
 var peerCount   = 0;
-var transfers   = {};   // ftid → { pid, name, size, mime, chunks[], got }
-var fdata       = {};   // ftid → { name, size, dir, pct, blob? }
-var pendingSend = {};   // ftid → { file, pid }
+var transfers   = {};  // ftid → { pid, name, size, mime, chunks[], got }
+var fdata       = {};  // ftid → { name, size, dir, pct, blob? }
+var pendingSend = {};  // ftid → { file, pid }
 var queuedFiles = [];
 
-// WebSocket relay
-var ws          = null;
-var myWsId      = null;   // assigned by server on 'welcome'
+// Ably
+var ablyClient  = null;
+var ablyChannel = null;
+var myAblyId    = null;   // unique ID for this client in this session
 var currentRoom = null;   // 6-char room ID
-var wsReady     = false;
+var ablyReady   = false;
 
-// Mode flags
-var REQ_MODE    = false;  // ?req=ROOM — auto-send on file pick
-var REQ_ROOM    = null;
+// Mode
+var REQ_MODE = false;
+var REQ_ROOM = null;
 
 // ICE
 var ICE = {iceServers:[
@@ -548,49 +541,60 @@ var ICE = {iceServers:[
   {urls:'stun:stun.cloudflare.com:3478'}
 ]};
 
-// ── iOS viewport ─────────────────────────────────────
+// ── iOS viewport ──────────────────────────────────────────────────
 function setVH(){
-  var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.getElementById('app').style.height = h+'px';
+  var h=window.visualViewport?window.visualViewport.height:window.innerHeight;
+  document.getElementById('app').style.height=h+'px';
 }
 setVH();
-window.addEventListener('resize', setVH);
-if(window.visualViewport) window.visualViewport.addEventListener('resize', function(){
+window.addEventListener('resize',setVH);
+if(window.visualViewport) window.visualViewport.addEventListener('resize',function(){
   setVH();
   var m=document.getElementById('msgs'); if(m) m.scrollTop=m.scrollHeight;
 });
 
-// ── Page URL ─────────────────────────────────────────
-var PAGE_URL = (function(){
-  var l=window.location, u=l.protocol+'//'+l.host+l.pathname;
+// ── Page URL ──────────────────────────────────────────────────────
+var PAGE_URL=(function(){
+  var l=window.location,u=l.protocol+'//'+l.host+l.pathname;
   return u.endsWith('/')||u.split('/').pop().includes('.')?u:u+'/';
 })();
 
-// ── Boot: read URL params ─────────────────────────────
+// ── Boot: read URL params ─────────────────────────────────────────
+function randomRoomId(){
+  var c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',id='';
+  for(var i=0;i<6;i++) id+=c[Math.floor(Math.random()*c.length)];
+  return id;
+}
+
 (function boot(){
-  var params = new URLSearchParams(window.location.search);
-  var room   = params.get('room') || params.get('r');
-  var req    = params.get('req');
+  var params=new URLSearchParams(window.location.search);
+  var room=params.get('room')||params.get('r');
+  var req=params.get('req');
+
+  document.getElementById('logo-sub-txt').textContent='p2p · ably';
 
   if(req){
-    REQ_MODE = true;
-    REQ_ROOM = req.toUpperCase();
+    // Request-a-file mode — show prompt to pick a file and auto-send
+    REQ_MODE=true; REQ_ROOM=req.toUpperCase();
     document.body.classList.add('req-mode');
-    document.getElementById('quick-drop').querySelector('.qd-sub').textContent =
+    document.getElementById('quick-drop').querySelector('.qd-sub').textContent=
       'Pick the file — it will be sent automatically';
-    // Show req modal after a short delay
-    setTimeout(function(){ openOv('req-ov'); }, 400);
-    if(WS_URL) connectWS(REQ_ROOM);
-  } else if(room){
-    currentRoom = room.toUpperCase();
-    if(WS_URL) setTimeout(function(){ connectWS(currentRoom); autoJoinRoom(); }, 200);
-  }
+    setTimeout(function(){ openOv('req-ov'); },400);
+    joinAblyRoom(REQ_ROOM);
 
-  // Update logo sub
-  document.getElementById('logo-sub-txt').textContent = WS_URL ? 'p2p · relay' : 'p2p · manual';
+  } else if(room){
+    // Room in URL — auto-join silently
+    joinAblyRoom(room.toUpperCase());
+
+  } else {
+    // No room — auto-create one and put it in the URL so it's shareable immediately
+    currentRoom=randomRoomId();
+    history.replaceState(null,'','?room='+currentRoom);
+    joinAblyRoom(currentRoom);
+  }
 })();
 
-// ── Utilities ─────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────
 function setStatus(t,c){
   document.getElementById('st').textContent=t;
   document.getElementById('dot').className='dot'+(c?' '+c:'');
@@ -606,12 +610,12 @@ function b64dec(b){ return decodeURIComponent(Array.prototype.map.call(atob(b),f
 function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; return(b/1048576).toFixed(2)+' MB'; }
 function mkId(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);}); }
 function nowTs(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function isImage(name){ return /\.(jpe?g|png|gif|webp|svg|bmp|ico|avif)$/i.test(name); }
+function isImage(n){ return /\.(jpe?g|png|gif|webp|svg|bmp|avif)$/i.test(n); }
 function fileIcon(n){ var x=n.split('.').pop().toLowerCase(); return {pdf:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',bmp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',zip:'📦',tar:'📦',gz:'📦',js:'💻',ts:'💻',py:'💻',html:'💻',json:'💻',txt:'📝',md:'📝',docx:'📝',xlsx:'📊',csv:'📊'}[x]||'📁'; }
 function connectedPeers(){ return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; }); }
 function anyConnected(){ return connectedPeers().length>0; }
 
-// ── Modals ────────────────────────────────────────────
+// ── Modals ────────────────────────────────────────────────────────
 function openOv(id){ document.getElementById(id).classList.add('open'); }
 function closeOv(id){ document.getElementById(id).classList.remove('open'); }
 document.addEventListener('keydown',function(e){
@@ -622,264 +626,239 @@ document.addEventListener('keydown',function(e){
   if(el) el.addEventListener('click',function(e){ if(e.target.id===id) closeOv(id); });
 });
 
-// ── Tab switcher in host modal ────────────────────────
+// ── Tab switcher in host modal ────────────────────────────────────
 function switchTab(tab){
-  var isWs = tab==='ws';
-  document.getElementById('tab-ws-body').style.display  = isWs ? '' : 'none';
-  document.getElementById('tab-sdp-body').style.display = isWs ? 'none' : '';
-  document.getElementById('ans-btn').style.display      = isWs ? 'none' : '';
-  document.getElementById('tab-ws').style.borderBottom  = isWs ? '2px solid #00ff88' : '';
-  document.getElementById('tab-sdp').style.borderBottom = isWs ? '' : '2px solid #00ff88';
-  document.getElementById('tab-ws').style.color         = isWs ? '#00ff88' : '';
-  document.getElementById('tab-sdp').style.color        = isWs ? '' : '#00ff88';
+  var isWs=tab==='ws';
+  document.getElementById('tab-ws-body').style.display=isWs?'':'none';
+  document.getElementById('tab-sdp-body').style.display=isWs?'none':'';
+  document.getElementById('ans-btn').style.display=isWs?'none':'';
+  document.getElementById('tab-ws').style.borderBottom=isWs?'2px solid #00ff88':'';
+  document.getElementById('tab-sdp').style.borderBottom=isWs?'':'2px solid #00ff88';
+  document.getElementById('tab-ws').style.color=isWs?'#00ff88':'';
+  document.getElementById('tab-sdp').style.color=isWs?'':'#00ff88';
 }
 
-// ── WebSocket relay ───────────────────────────────────
-function connectWS(roomId){
-  if(!WS_URL) return;
-  if(ws && ws.readyState <= 1){ // CONNECTING or OPEN
-    // Already have a WS, just join the room
-    wsJoinRoom(roomId);
+// ── Ably signalling ───────────────────────────────────────────────
+function joinAblyRoom(roomId){
+  currentRoom=roomId.toUpperCase();
+  myAblyId=myAblyId||mkId();  // stable for this page session
+
+  // If already connected to Ably, just switch channel
+  if(ablyClient&&ablyClient.connection.state==='connected'){
+    subscribeChannel(currentRoom);
     return;
   }
-  ws = new WebSocket(WS_URL);
-  ws.onopen = function(){
-    wsReady = true;
-    wsJoinRoom(roomId);
-  };
-  ws.onmessage = function(e){
-    var m; try{ m=JSON.parse(e.data); }catch(ex){ return; }
-    onWsMessage(m);
-  };
-  ws.onclose = function(){
-    wsReady = false;
-    ws = null;
-    // Try reconnect after 3s if we have a room
-    if(currentRoom) setTimeout(function(){ connectWS(currentRoom); }, 3000);
-  };
-  ws.onerror = function(){ ws=null; wsReady=false; };
-  // Ping every 25s to keep alive through Cloudflare's 100s idle timeout
-  setInterval(function(){
-    if(ws&&ws.readyState===1) ws.send(JSON.stringify({t:'ping'}));
-  }, 25000);
+
+  // Connect with token auth — key never touches the browser
+  ablyClient=new Ably.Realtime({
+    authUrl: AUTH_URL+'?clientId='+myAblyId,
+    clientId: myAblyId,
+    // Recover presence after brief disconnects
+    recover: function(_, cb){ cb(true); }
+  });
+
+  ablyClient.connection.on('connected',function(){
+    ablyReady=true;
+    subscribeChannel(currentRoom);
+  });
+  ablyClient.connection.on('failed',function(){
+    toast('Ably connection failed','er');
+  });
 }
 
-function wsJoinRoom(roomId){
-  if(!ws||ws.readyState!==1) return;
-  currentRoom = roomId;
-  ws.send(JSON.stringify({t:'join', room:roomId}));
-}
+function subscribeChannel(roomId){
+  // Leave old channel if switching rooms
+  if(ablyChannel) ablyChannel.detach();
 
-function wsSend(to, payload){
-  if(!ws||ws.readyState!==1) return false;
-  ws.send(JSON.stringify(Object.assign({t:'signal', to:to}, payload)));
-  return true;
-}
+  ablyChannel=ablyClient.channels.get('relay:'+roomId);
 
-function onWsMessage(m){
-  if(m.t==='pong') return;
+  // Presence: when someone enters the channel, we initiate a WebRTC connection to them
+  ablyChannel.presence.subscribe('enter',function(member){
+    var remoteId=member.clientId;
+    if(remoteId===myAblyId) return;  // ignore ourselves
+    // We initiate to anyone who joined before us (they'll answer)
+    // Convention: lower ID initiates to higher ID to avoid double-offers
+    if(myAblyId < remoteId){
+      ablyInitiate(remoteId);
+    }
+    // else: wait for their offer via 'signal' message
+  });
 
-  if(m.t==='welcome'){
-    myWsId = m.you;
-    updateRoomUI();
-    // Initiate connection to every peer already in the room
-    (m.peers||[]).forEach(function(peerId){
-      wsInitiateConnection(peerId);
+  // Receive signals addressed to us
+  ablyChannel.subscribe('signal',function(msg){
+    var d=msg.data;
+    if(!d||d.to!==myAblyId) return;
+    onAblySignal(d);
+  });
+
+  // Announce our presence — this triggers 'enter' on existing members
+  ablyChannel.presence.enter({});
+
+  // Get existing members and initiate to each one we should connect to
+  ablyChannel.presence.get(function(err,members){
+    if(err||!members) return;
+    members.forEach(function(member){
+      var remoteId=member.clientId;
+      if(remoteId===myAblyId) return;
+      if(myAblyId < remoteId) ablyInitiate(remoteId);
     });
+  });
 
-  } else if(m.t==='joined'){
-    // New peer joined our room — they will initiate to us
-    // (the new joiner calls wsInitiateConnection for each existing peer)
-    // Nothing to do here — wait for their offer
-
-  } else if(m.t==='left'){
-    // Peer disconnected from room — DC may already be dead, just clean up
-    var pid = wsPidForWsId(m.who);
-    if(pid) peerGone(pid, true);  // true = keep chat
-
-  } else if(m.t==='signal'){
-    onWsSignal(m);
-  }
+  updateRoomUI();
 }
 
-function wsPidForWsId(wsId){
-  return Object.keys(peers).find(function(pid){ return peers[pid].wsId===wsId; }) || null;
-}
+// We send an SDP offer to remoteAblyId via Ably
+function ablyInitiate(remoteAblyId){
+  var pid=mkId(); peerCount++;
+  peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:remoteAblyId};
+  var pc=makePC(pid); peers[pid].pc=pc;
+  var dc=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc);
 
-// We are an existing peer; new joiner wsId just appeared in 'joined' — we DON'T call this.
-// We call this when WE are joining and there are existing peers.
-function wsInitiateConnection(remoteWsId){
-  var pid = mkId(); peerCount++;
-  peers[pid] = {pc:null, dc:null, name:'Peer '+peerCount, _connected:false, wsId:remoteWsId};
-  var pc = makePC(pid); peers[pid].pc = pc;
-  var dc = pc.createDataChannel('relay',{ordered:true});
-  attachDC(pid, dc);
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
-      wsSend(remoteWsId, {sdp:sdpObj(desc), forPid:pid});
+      ablySend(remoteAblyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
     })
-    .catch(function(e){ console.error('[RELAY] wsInitiate:',e); delete peers[pid]; });
+    .catch(function(e){ console.error('[RELAY] ablyInitiate:',e); delete peers[pid]; });
 }
 
-function onWsSignal(m){
-  // m.from = wsId of sender
-  var fromWsId = m.from;
-  if(m.sdp && m.sdp.type==='offer'){
-    // Someone is offering us a connection
-    var pid = mkId(); peerCount++;
-    peers[pid] = {pc:null, dc:null, name:'Peer '+peerCount, _connected:false, wsId:fromWsId};
-    var pc = makePC(pid); peers[pid].pc = pc;
-    pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
+function ablySend(toAblyId, payload){
+  if(!ablyChannel) return;
+  ablyChannel.publish('signal', Object.assign({to:toAblyId, from:myAblyId}, payload));
+}
+
+function onAblySignal(d){
+  if(d.type==='offer'){
+    // Someone is offering — we answer
+    var pid=mkId(); peerCount++;
+    peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:d.from};
+    var pc=makePC(pid); peers[pid].pc=pc;
+    pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
       .then(function(){ return pc.createAnswer(); })
       .then(function(a){ return pc.setLocalDescription(a); })
       .then(function(){ return gatherICE(pc); })
       .then(function(desc){
-        wsSend(fromWsId, {sdp:sdpObj(desc), forPid:m.forPid});
+        ablySend(d.from,{type:'answer',sdp:sdpObj(desc),forPid:d.fromPid});
       })
-      .catch(function(e){ console.error('[RELAY] wsAnswer:',e); delete peers[pid]; });
+      .catch(function(e){ console.error('[RELAY] ablyAnswer:',e); delete peers[pid]; });
 
-  } else if(m.sdp && m.sdp.type==='answer'){
-    // Answer to our offer
-    var pid2 = m.forPid || wsPidForWsId(fromWsId);
+  } else if(d.type==='answer'){
+    // Our offer was answered — apply the answer
+    var pid2=d.forPid||ablyPidForId(d.from);
     if(!pid2||!peers[pid2]) return;
-    peers[pid2].wsId = fromWsId;
-    peers[pid2].pc.setRemoteDescription(new RTCSessionDescription(m.sdp))
-      .catch(function(e){ console.error('[RELAY] wsApplyAnswer:',e); });
+    peers[pid2].ablyId=d.from;
+    peers[pid2].pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
+      .catch(function(e){ console.error('[RELAY] ablyApplyAnswer:',e); });
   }
 }
 
-function updateRoomUI(){
-  if(!currentRoom) return;
-  var pill = document.getElementById('room-pill');
-  var el   = document.getElementById('room-id-el');
-  pill.style.display = 'flex';
-  el.textContent = currentRoom;
-  // Update room link display in modal
-  var link = roomLink(currentRoom);
-  var lel  = document.getElementById('room-link-el');
-  if(lel) lel.textContent = link;
-  // Draw room QR
-  var qrWrap = document.getElementById('room-qr-wrap');
-  if(qrWrap) drawQR(qrWrap, link);
-  // Update ws status
-  var wslbl = document.getElementById('ws-status-lbl');
-  if(wslbl) wslbl.textContent = 'Waiting for peer… room: '+currentRoom;
+function ablyPidForId(ablyId){
+  return Object.keys(peers).find(function(pid){ return peers[pid].ablyId===ablyId; })||null;
 }
 
-function roomLink(room){
-  return PAGE_URL + '?room=' + room;
+// ── Room UI helpers ───────────────────────────────────────────────
+function updateRoomUI(){
+  if(!currentRoom) return;
+  var pill=document.getElementById('room-pill');
+  pill.style.display='flex';
+  document.getElementById('room-id-el').textContent=currentRoom;
+  var link=roomLink(currentRoom);
+  var lel=document.getElementById('room-link-el');
+  if(lel) lel.textContent=link;
+  var qrWrap=document.getElementById('room-qr-wrap');
+  if(qrWrap) drawQR(qrWrap,link);
+  var wslbl=document.getElementById('ws-status-lbl');
+  if(wslbl) wslbl.textContent='Waiting for peer… room: '+currentRoom;
 }
+
+function roomLink(room){ return PAGE_URL+'?room='+room; }
 
 function copyRoomLink(){
   if(!currentRoom){ toast('No room yet','er'); return; }
-  navigator.clipboard.writeText(roomLink(currentRoom)).then(function(){ toast('Room link copied','ok'); });
+  navigator.clipboard.writeText(roomLink(currentRoom))
+    .then(function(){ toast('Room link copied','ok'); });
 }
 
-function autoJoinRoom(){
-  // Called when ?room= is in URL — show a banner and auto-join
-  var lbl = document.getElementById('ws-status-lbl');
-  if(lbl) lbl.textContent = 'Connecting to room '+currentRoom+'…';
-  updateRoomUI();
-  // Start a host so we have an offer ready for whoever else is in the room
-  // Actually the WS handles it — once WS connects + joins, onWsMessage handles the rest
-  setStatus('connecting…','wait');
-}
-
-// ── Request-a-file mode ───────────────────────────────
+// ── Request-a-file mode ───────────────────────────────────────────
 function startRequestFile(){
-  if(!WS_URL){ toast('Requires WebSocket relay — set WS_URL','er'); return; }
-  // Generate a room, connect to it, show a shareable "req" link
-  var room = randomRoomId();
-  currentRoom = room;
-  connectWS(room);
-  var reqLink = PAGE_URL + '?req=' + room;
-  // Show the host modal in WS tab with the req link
-  var lel = document.getElementById('room-link-el');
-  if(lel) lel.textContent = reqLink;
-  var qrWrap = document.getElementById('room-qr-wrap');
-  if(qrWrap) drawQR(qrWrap, reqLink);
-  var lbl = document.getElementById('ws-status-lbl');
-  if(lbl) lbl.textContent = 'Share this link — friend picks a file, it sends automatically';
-  var pill = document.getElementById('room-pill');
+  var room=randomRoomId(); currentRoom=room;
+  joinAblyRoom(room);
+  var reqLink=PAGE_URL+'?req='+room;
+  var lel=document.getElementById('room-link-el');
+  if(lel) lel.textContent=reqLink;
+  var qrWrap=document.getElementById('room-qr-wrap');
+  if(qrWrap) drawQR(qrWrap,reqLink);
+  var lbl=document.getElementById('ws-status-lbl');
+  if(lbl) lbl.textContent='Share this link — friend picks a file, it sends automatically';
+  var pill=document.getElementById('room-pill');
   if(pill){ pill.style.display='flex'; document.getElementById('room-id-el').textContent=room; }
   switchTab('ws');
   openOv('host-ov');
 }
 
 function randomRoomId(){
-  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', id='';
-  for(var i=0;i<6;i++) id+=chars[Math.floor(Math.random()*chars.length)];
+  var c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',id='';
+  for(var i=0;i<6;i++) id+=c[Math.floor(Math.random()*c.length)];
   return id;
 }
 
-// Request-a-file: visitor picks file
 function reqPickFile(){ document.getElementById('req-file-input').click(); }
 function reqFileChosen(e){
-  var files = Array.from(e.target.files); if(!files.length) return;
+  var files=Array.from(e.target.files); if(!files.length) return;
   closeOv('req-ov');
-  // If already connected, send immediately; else queue and auto-join
-  queuedFiles = files;
-  renderQueuedFiles();
+  queuedFiles=files; renderQueuedFiles();
   if(anyConnected()){
     flushQueue(connectedPeers()[0]);
-  } else if(REQ_ROOM && WS_URL){
-    connectWS(REQ_ROOM);
+  } else if(REQ_ROOM&&AUTH_URL){
+    joinAblyRoom(REQ_ROOM);
     setStatus('connecting…','wait');
-    // Files will flush when peer connects via onPeerConnected
   }
   e.target.value='';
 }
 
-// ── Sidebar toggle ────────────────────────────────────
+// ── Sidebar toggles ───────────────────────────────────────────────
 function toggleSidebar(){
-  // Mobile
   var sb=document.getElementById('sidebar');
-  if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
-  else sb.classList.toggle('expanded');
+  if(window.innerWidth<=600){
+    // Mobile: hidden/expanded classes
+    if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
+    else sb.classList.toggle('expanded');
+  } else {
+    // Desktop: collapsed slide-away
+    sb.classList.toggle('collapsed');
+  }
 }
-function toggleSidebarDesktop(){
-  var sb=document.getElementById('sidebar');
-  sb.classList.toggle('collapsed');
-}
+function toggleSidebarDesktop(){ toggleSidebar(); }
 
-// ── Chat ──────────────────────────────────────────────
+// ── Chat ──────────────────────────────────────────────────────────
 function addMsg(text,who,fromName){
   var el=document.createElement('div');
   el.className='msg '+(who||'sys');
   var lbl=(fromName&&who==='them')?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
   el.innerHTML=lbl+'<div class="bubble">'+esc(text)+'</div><div class="ts">'+nowTs()+'</div>';
-  var m=document.getElementById('msgs');
-  m.appendChild(el); m.scrollTop=m.scrollHeight;
+  var m=document.getElementById('msgs'); m.appendChild(el); m.scrollTop=m.scrollHeight;
 }
 
-function addImgMsg(blob, name, who, fromName){
-  var url = URL.createObjectURL(blob);
-  var el  = document.createElement('div');
-  el.className = 'msg '+(who||'sys');
+function addImgMsg(blob,name,who,fromName){
+  var url=URL.createObjectURL(blob);
+  var el=document.createElement('div'); el.className='msg '+(who||'sys');
   var lbl=(fromName&&who==='them')?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
-  el.innerHTML = lbl
+  el.innerHTML=lbl
     +'<div class="img-bubble" onclick="openImgFull(this)">'
-    +'<img src="'+url+'" alt="'+esc(name)+'" loading="lazy">'
-    +'</div>'
+    +'<img src="'+url+'" alt="'+esc(name)+'" loading="lazy"></div>'
     +'<div class="ts">'+esc(name)+'  '+nowTs()+'</div>';
-  var m=document.getElementById('msgs');
-  m.appendChild(el); m.scrollTop=m.scrollHeight;
+  var m=document.getElementById('msgs'); m.appendChild(el); m.scrollTop=m.scrollHeight;
 }
 
-function openImgFull(el){
-  var img=el.querySelector('img'); if(!img) return;
-  window.open(img.src,'_blank');
-}
+function openImgFull(el){ var img=el.querySelector('img'); if(img) window.open(img.src,'_blank'); }
 
 function sendChat(){
-  var inp=document.getElementById('ci'), text=inp.value.trim();
+  var inp=document.getElementById('ci'),text=inp.value.trim();
   if(!text) return;
   var open=connectedPeers();
   if(!open.length){ toast('Not connected','er'); return; }
-  var msg=JSON.stringify({t:'chat',text:text});
-  open.forEach(function(pid){ peers[pid].dc.send(msg); });
+  open.forEach(function(pid){ peers[pid].dc.send(JSON.stringify({t:'chat',text:text})); });
   addMsg(text,'me');
   inp.value=''; inp.style.height='';
 }
@@ -888,7 +867,7 @@ function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHei
 function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
 function targetPid(){ var v=document.getElementById('peer-target').value; return (v&&v!=='all')?v:null; }
 
-// ── Peer list UI ──────────────────────────────────────
+// ── Peer list UI ──────────────────────────────────────────────────
 function renderPeers(){
   var list=document.getElementById('peers-list');
   var sec=document.getElementById('peers-sec');
@@ -929,36 +908,32 @@ function updateStatus(){
 function kickPeer(pid){
   var p=peers[pid]; if(!p) return;
   try{ p.pc.close(); }catch(e){}
-  peerGone(pid, true);
+  peerGone(pid,true);
 }
 
-// keepChat=true: don't clear messages when last peer leaves
-function peerGone(pid, keepChat){
-  delete peers[pid];
-  renderPeers(); updateStatus();
-  if(!anyConnected() && !keepChat) goIdle();
-  // if no peers but keepChat: stay in chat view, disable input
-  if(!anyConnected() && keepChat){
-    document.getElementById('ci').disabled = true;
-    addMsg('— disconnected — chat history preserved —');
+function peerGone(pid,keepChat){
+  delete peers[pid]; renderPeers(); updateStatus();
+  if(!anyConnected()){
+    if(keepChat){
+      document.getElementById('ci').disabled=true;
+      addMsg('— all peers disconnected — chat history preserved —');
+    } else {
+      goIdle();
+    }
   }
 }
 
-// ── RTCPeerConnection ─────────────────────────────────
+// ── RTCPeerConnection ─────────────────────────────────────────────
 function makePC(pid){
   var pc=new RTCPeerConnection(ICE);
   pc.oniceconnectionstatechange=function(){
     var s=pc.iceConnectionState;
-    console.log('[RELAY] ICE',pid,s);
     if((s==='connected'||s==='completed')&&peers[pid]&&!peers[pid]._connected){
-      peers[pid]._connected=true;
-      finishConnect(pid);
+      peers[pid]._connected=true; finishConnect(pid);
     } else if(s==='failed'){
-      toast((peers[pid]?peers[pid].name:'Peer')+' failed','er');
-      peerGone(pid, true);
+      toast((peers[pid]?peers[pid].name:'Peer')+' failed','er'); peerGone(pid,true);
     } else if((s==='disconnected'||s==='closed')&&peers[pid]){
-      addMsg('✕ '+peers[pid].name+' left');
-      peerGone(pid, true);
+      addMsg('✕ '+peers[pid].name+' left'); peerGone(pid,true);
     }
   };
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
@@ -970,19 +945,14 @@ function attachDC(pid,ch){
   ch.binaryType='arraybuffer';
   ch.bufferedAmountLowThreshold=BUF_LOW;
   ch.onmessage=function(e){
-    if(typeof e.data==='string') onText(pid,e.data);
-    else onBin(pid,e.data);
+    if(typeof e.data==='string') onText(pid,e.data); else onBin(pid,e.data);
   };
   ch.onbufferedamountlow=function(){
     var pump=peers[pid]&&peers[pid]._pump;
     if(pump){ delete peers[pid]._pump; pump(); }
   };
-  // DC can open before ICE reports 'connected' (e.g. on loopback)
   ch.onopen=function(){
-    if(peers[pid]&&!peers[pid]._connected){
-      peers[pid]._connected=true;
-      finishConnect(pid);
-    }
+    if(peers[pid]&&!peers[pid]._connected){ peers[pid]._connected=true; finishConnect(pid); }
   };
 }
 
@@ -998,17 +968,12 @@ function gatherICE(pc){
 }
 function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 
-// ── finishConnect: first time a peer's DC + ICE are ready ────────────
 function finishConnect(pid){
   var p=peers[pid]; if(!p) return;
-  // Introduce new peer to all existing connected peers (mesh)
   introNewPeerMesh(pid);
-  // Show chat if on splash
   if(document.getElementById('splash').style.display!=='none') showChatUI();
-  renderPeers(); updateStatus();
-  // Enable chat input
   document.getElementById('ci').disabled=false;
-  // Banner
+  renderPeers(); updateStatus();
   showBanner('⚡ '+p.name+' joined');
   addMsg('⚡ '+p.name+' joined');
   setTimeout(function(){ flushQueue(pid); },300);
@@ -1021,18 +986,16 @@ function showBanner(text){
   setTimeout(function(){ b.style.opacity='0'; b.style.transform='translateX(-50%) translateY(-8px)'; setTimeout(function(){b.remove();},420); },2200);
 }
 
-// ── Mesh intro (DC signalling) ────────────────────────
+// ── Mesh DC signalling ────────────────────────────────────────────
 function introNewPeerMesh(newPid){
   var existing=connectedPeers().filter(function(p){ return p!==newPid; });
   if(!existing.length) return;
-  var peerList=existing.map(function(p){ return {pid:p,name:peers[p].name}; });
-  peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:peerList}));
+  peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:existing.map(function(p){ return {pid:p,name:peers[p].name}; })}));
   existing.forEach(function(ePid){
     peers[ePid].dc.send(JSON.stringify({t:'meet',pid:newPid,name:peers[newPid].name}));
   });
 }
 
-// ── Incoming DC messages ──────────────────────────────
 function onText(pid,raw){
   var p=peers[pid];
   var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
@@ -1068,33 +1031,26 @@ function onText(pid,raw){
     var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
     fdata[m.id].blob=blob; fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
     updateFileRow(m.id);
-    // Show image inline in chat
-    if(isImage(ft.name)){
-      addImgMsg(blob, ft.name, 'them', p?p.name:null);
-    } else {
-      addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
-    }
+    if(isImage(ft.name)) addImgMsg(blob,ft.name,'them',p?p.name:null);
+    else addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
     toast('Received: '+ft.name,'ok');
     delete transfers[m.id];
 
-  // ── Mesh DC signalling ──
   } else if(m.t==='meet'){
     handleMeet(pid,m);
   } else if(m.t==='peer-list'){
-    console.log('[RELAY] peer-list',m.peers);
+    // No action needed — introducer handles meet messages
   } else if(m.t==='sig-offer'){
     handleRelayedOffer(pid,m);
   } else if(m.t==='sig-answer'){
     handleRelayedAnswer(pid,m);
   } else if(m.t==='sig-answer-apply'){
-    handleSigAnswerApply(pid,m);
+    handleSigAnswerApply(m);
   }
 }
 
-// ── Mesh DC signalling handlers ───────────────────────
 function handleMeet(introducerPid,m){
-  var newPid=m.pid;
-  if(peers[newPid]) return;
+  var newPid=m.pid; if(peers[newPid]) return;
   peerCount++;
   peers[newPid]={pc:null,dc:null,name:m.name||('Peer '+peerCount),_connected:false};
   var pc=makePC(newPid); peers[newPid].pc=pc;
@@ -1105,12 +1061,11 @@ function handleMeet(introducerPid,m){
     .then(function(desc){
       peers[introducerPid].dc.send(JSON.stringify({t:'sig-offer',forPid:newPid,sdp:sdpObj(desc)}));
     })
-    .catch(function(e){ console.error('[RELAY] meet offer:',e); delete peers[newPid]; });
+    .catch(function(e){ console.error('[RELAY] meet:',e); delete peers[newPid]; });
 }
 
 function handleRelayedOffer(introducerPid,m){
-  var offerFrom=m.forPid;
-  if(!offerFrom||peers[offerFrom]) return;
+  var offerFrom=m.forPid; if(!offerFrom||peers[offerFrom]) return;
   peerCount++;
   peers[offerFrom]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
   var pc=makePC(offerFrom); peers[offerFrom].pc=pc;
@@ -1121,40 +1076,33 @@ function handleRelayedOffer(introducerPid,m){
     .then(function(desc){
       peers[introducerPid].dc.send(JSON.stringify({t:'sig-answer',forPid:offerFrom,sdp:sdpObj(desc)}));
     })
-    .catch(function(e){ console.error('[RELAY] relayedOffer:',e); delete peers[offerFrom]; });
+    .catch(function(e){ console.error('[RELAY] relayOffer:',e); delete peers[offerFrom]; });
 }
 
 function handleRelayedAnswer(fromPid,m){
-  var targetPid2=m.forPid;
-  if(!targetPid2||!peers[targetPid2]) return;
-  var tdc=peers[targetPid2].dc;
-  if(!tdc||tdc.readyState!=='open') return;
+  var tpid=m.forPid; if(!tpid||!peers[tpid]) return;
+  var tdc=peers[tpid].dc; if(!tdc||tdc.readyState!=='open') return;
   tdc.send(JSON.stringify({t:'sig-answer-apply',sdp:m.sdp,from:fromPid,fromName:peers[fromPid]?peers[fromPid].name:'?'}));
 }
 
-function handleSigAnswerApply(introducerPid,m){
-  var fromPid2=m.from;
-  var pc2=peers[fromPid2]&&peers[fromPid2].pc;
-  if(!pc2) return;
-  if(pc2.signalingState==='have-local-offer'){
+function handleSigAnswerApply(m){
+  var pc2=peers[m.from]&&peers[m.from].pc; if(!pc2) return;
+  if(pc2.signalingState==='have-local-offer')
     pc2.setRemoteDescription(new RTCSessionDescription(m.sdp))
-      .catch(function(e){ console.error('[RELAY] sigAnswerApply:',e); });
-  }
+      .catch(function(e){ console.error('[RELAY] sigApply:',e); });
 }
 
-// ── Binary chunks ──────────────────────────────────────
+// ── Binary chunks ─────────────────────────────────────────────────
 function onBin(pid,buf){
   var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
   var ft=transfers[ftid]; if(!ft) return;
-  var chunk=buf.slice(36);
-  ft.chunks.push(chunk); ft.got+=chunk.byteLength;
+  var chunk=buf.slice(36); ft.chunks.push(chunk); ft.got+=chunk.byteLength;
   var pct=Math.round(ft.got/ft.size*100);
   if(fdata[ftid]) fdata[ftid].pct=pct;
-  var bar=document.getElementById('fb-'+ftid);
-  if(bar) bar.style.width=pct+'%';
+  var bar=document.getElementById('fb-'+ftid); if(bar) bar.style.width=pct+'%';
 }
 
-// ── File announce / respond ───────────────────────────
+// ── File announce / respond ───────────────────────────────────────
 function announceFile(file,pid){
   var targets=pid?[pid]:connectedPeers();
   if(!targets.length){ toast('Not connected','er'); return; }
@@ -1172,24 +1120,21 @@ function announceFile(file,pid){
 function showFileRequest(pid,m){
   var p=peers[pid];
   var el=document.createElement('div'); el.className='fi-request'; el.id='freq-'+m.id;
-  el.innerHTML=
-    '<div class="fi-req-head">'
-      +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
-      +'<div style="flex:1;min-width:0">'
-        +'<div class="fi-req-name">'+esc(m.name)+'</div>'
-        +'<div class="fi-req-size">'+fmtBytes(m.size)+(p?' · from '+esc(p.name):'')+'</div>'
-      +'</div>'
-    +'</div>'
+  el.innerHTML='<div class="fi-req-head">'
+    +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
+    +'<div style="flex:1;min-width:0">'
+      +'<div class="fi-req-name">'+esc(m.name)+'</div>'
+      +'<div class="fi-req-size">'+fmtBytes(m.size)+(p?' · from '+esc(p.name):'')+'</div>'
+    +'</div></div>'
     +'<div class="fi-req-btns">'
       +'<button class="btn primary" onclick="respondFile(\''+m.id+'\',\''+pid+'\',true)">✓ Accept</button>'
-      +'<button class="btn danger"  onclick="respondFile(\''+m.id+'\',\''+pid+'\',false)">✕ Decline</button>'
+      +'<button class="btn danger" onclick="respondFile(\''+m.id+'\',\''+pid+'\',false)">✕ Decline</button>'
     +'</div>';
   var msgs=document.getElementById('msgs'); msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
 }
 
 function respondFile(ftid,pid,accept){
-  var card=document.getElementById('freq-'+ftid);
-  var p=peers[pid];
+  var card=document.getElementById('freq-'+ftid); var p=peers[pid];
   if(card){
     if(accept) card.innerHTML='<div style="font-size:11px;color:#00ff88;padding:4px 0">✓ Accepted — receiving…</div>';
     else{ card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>'; setTimeout(function(){if(card.parentNode)card.remove();},1500); }
@@ -1197,13 +1142,12 @@ function respondFile(ftid,pid,accept){
   if(p&&p.dc&&p.dc.readyState==='open') p.dc.send(JSON.stringify({t:accept?'fr':'fd',id:ftid}));
 }
 
-// ── File sending — backpressure via bufferedAmountLow ─
+// ── File sending ──────────────────────────────────────────────────
 function startSendingFile(ftid,file,pid){
   var p=peers[pid];
   if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
   p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,size:file.size,mime:file.type}));
-  var idStr=(ftid+'                                    ').slice(0,36);
-  var idBytes=new TextEncoder().encode(idStr);
+  var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
   var offset=0;
   function pump(){
     if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted','er'); return; }
@@ -1212,15 +1156,11 @@ function startSendingFile(ftid,file,pid){
       if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
       updateFileRow(ftid);
       addMsg('✓ '+file.name+' sent to '+p.name,'sys');
-      // If sender is an image, show it in chat too
-      if(isImage(file.name)){
-        addImgMsg(file, file.name, 'me', null);
-      }
+      if(isImage(file.name)) addImgMsg(file,file.name,'me',null);
       return;
     }
     if(p.dc.bufferedAmount>=BUF_HIGH){ peers[pid]._pump=pump; return; }
-    var slice=file.slice(offset,offset+CHUNK);
-    slice.arrayBuffer().then(function(ab){
+    file.slice(offset,offset+CHUNK).arrayBuffer().then(function(ab){
       var out=new Uint8Array(36+ab.byteLength);
       out.set(idBytes,0); out.set(new Uint8Array(ab),36);
       try{
@@ -1229,20 +1169,18 @@ function startSendingFile(ftid,file,pid){
         if(fdata[ftid]) fdata[ftid].pct=Math.min(99,Math.round(offset/file.size*100));
         var bar=document.getElementById('fb-'+ftid);
         if(bar) bar.style.width=(fdata[ftid]?fdata[ftid].pct:0)+'%';
-        setTimeout(pump,0); // yield — critical for same-device loopback
+        setTimeout(pump,0);
       }catch(e){ toast('Send error: '+e.message,'er'); }
     }).catch(function(e){ toast('Read error: '+e.message,'er'); });
   }
   pump();
 }
 
-// ── Sidebar drag/drop ─────────────────────────────────
+// ── Drop zones ────────────────────────────────────────────────────
 function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
 function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f,targetPid()); }); }
 function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
-
-// ── Splash drag/drop ──────────────────────────────────
 function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
 function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
 function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
@@ -1256,8 +1194,7 @@ function queueFiles(files){
 }
 
 function renderQueuedFiles(){
-  var wrap=document.getElementById('queued-files');
-  var status=document.getElementById('queued-status');
+  var wrap=document.getElementById('queued-files'),status=document.getElementById('queued-status');
   if(!queuedFiles.length){ wrap.style.display='none'; status.textContent=''; return; }
   wrap.style.display='flex'; wrap.innerHTML='';
   queuedFiles.forEach(function(f,i){
@@ -1268,18 +1205,16 @@ function renderQueuedFiles(){
       +'<button class="qf-rm" onclick="removeQueued('+i+')" title="Remove">✕</button>';
     wrap.appendChild(d);
   });
-  var s=anyConnected()?'⚡ Connected — sending now…':'⏳ Waiting for peer to connect…';
-  status.textContent=queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+s;
+  status.textContent=queuedFiles.length+' file'+(queuedFiles.length>1?'s':'')+' queued · '+(anyConnected()?'⚡ Connected — sending now…':'⏳ Waiting for peer…');
 }
 function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
-
 function flushQueue(pid){
   if(!queuedFiles.length) return;
   var files=queuedFiles.slice(); queuedFiles=[]; renderQueuedFiles();
   files.forEach(function(f){ announceFile(f,pid); });
 }
 
-// ── UI transitions ────────────────────────────────────
+// ── UI transitions ────────────────────────────────────────────────
 function showChatUI(){
   document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
   document.getElementById('splash').style.display='none';
@@ -1309,15 +1244,12 @@ function goIdle(){
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-  setStatus('idle');
-  fdata={}; transfers={}; pendingSend={};
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={};
 }
 
-// ── HOST (manual SDP) ─────────────────────────────────
-var _pendingHostPid=null;
-
+// ── Manual SDP host ───────────────────────────────────────────────
 function startHost(){
-  // Reset modal fields for reuse
+  // Reset modal
   document.getElementById('offer-out').value='';
   document.getElementById('ans-inp').value='';
   var btn=document.getElementById('ans-btn');
@@ -1327,52 +1259,52 @@ function startHost(){
   document.getElementById('conn-idle-hint').style.display='none';
   setStatus('gathering…','wait');
 
+  // Also join / create an Ably room if configured
+  if(AUTH_URL){
+    if(!currentRoom) currentRoom=randomRoomId();
+    joinAblyRoom(currentRoom);
+    updateRoomUI();
+    switchTab('ws');
+    openOv('host-ov');
+    if(!anyConnected()) setStatus('waiting…','wait');
+    document.getElementById('bd').style.display='';
+    document.getElementById('share-sec').style.display='';
+    drawQR(document.getElementById('qr-wrap'),PAGE_URL);
+    document.getElementById('page-url-el').textContent=PAGE_URL;
+    return;  // Ably handles connection — no SDP needed
+  }
+
+  // Manual SDP fallback
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
   var pc=makePC(pid); peers[pid].pc=pc;
-  _pendingHostPid=pid;
-
   var dc2=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc2);
-
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
       document.getElementById('offer-out').value=b64enc(JSON.stringify(sdpObj(desc)));
       document.getElementById('host-ov').dataset.pid=pid;
-      showSharePanel();
+      document.getElementById('share-sec').style.display='';
+      drawQR(document.getElementById('qr-wrap'),PAGE_URL);
+      document.getElementById('page-url-el').textContent=PAGE_URL;
       setStatus('waiting…','wait');
       document.getElementById('bd').style.display='';
-      // Default to SDP tab for manual flow; WS tab if relay available
-      switchTab(WS_URL&&currentRoom?'ws':'sdp');
+      switchTab('sdp');
       openOv('host-ov');
     })
     .catch(function(e){
-      console.error('[RELAY] startHost:',e);
-      toast('Error: '+e.message,'er');
-      delete peers[pid]; _pendingHostPid=null;
+      console.error('[RELAY] startHost:',e); toast('Error: '+e.message,'er');
+      delete peers[pid];
       document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
       if(!anyConnected()) setStatus('idle');
     });
-
-  // Also create a room if WS is configured
-  if(WS_URL){
-    if(!currentRoom){ currentRoom=randomRoomId(); }
-    connectWS(currentRoom);
-    updateRoomUI();
-  }
 }
 
 function addPeer(){
   startHost();
   var sb=document.getElementById('sidebar');
   if(sb.classList.contains('hidden')){ sb.classList.remove('hidden'); sb.classList.add('expanded'); }
-}
-
-function showSharePanel(){
-  document.getElementById('share-sec').style.display='';
-  drawQR(document.getElementById('qr-wrap'),PAGE_URL);
-  document.getElementById('page-url-el').textContent=PAGE_URL;
 }
 
 function copyPageUrl(){ navigator.clipboard.writeText(PAGE_URL).then(function(){ toast('Link copied','ok'); }); }
@@ -1382,7 +1314,6 @@ function cancelHost(){
   closeOv('host-ov');
   var pid=document.getElementById('host-ov').dataset.pid;
   if(pid&&peers[pid]){ try{peers[pid].pc.close();}catch(e){} delete peers[pid]; }
-  _pendingHostPid=null;
   if(!anyConnected()){
     document.getElementById('share-sec').style.display='none';
     document.getElementById('bd').style.display='none';
@@ -1396,29 +1327,26 @@ function applyAnswer(){
   var raw=document.getElementById('ans-inp').value.trim();
   if(!raw){ toast('Paste the answer code first','er'); return; }
   var pid=document.getElementById('host-ov').dataset.pid;
-  var p=peers[pid];
-  if(!p){ toast('Session expired — create a new one','er'); return; }
+  var p=peers[pid]; if(!p){ toast('Session expired','er'); return; }
   if(p.pc.iceConnectionState==='connected'||p.pc.iceConnectionState==='completed'){ closeOv('host-ov'); return; }
   if(p.pc.signalingState==='stable'){ toast('Session expired','er'); return; }
   var btn=document.getElementById('ans-btn');
   btn.disabled=true; btn.textContent='⏳ Connecting…';
   try{
-    var parsed=JSON.parse(b64dec(raw));
-    p.pc.setRemoteDescription(new RTCSessionDescription(parsed))
+    p.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(b64dec(raw))))
       .then(function(){ setStatus('connecting…','wait'); })
       .catch(function(e){ toast('Bad answer: '+e.message,'er'); btn.disabled=false; btn.textContent='Complete →'; });
   }catch(e){ toast('Could not read answer','er'); btn.disabled=false; btn.textContent='Complete →'; }
 }
 
-// ── JOINER (manual SDP) ───────────────────────────────
+// ── Manual SDP joiner ─────────────────────────────────────────────
 function doJoin(){
   var raw=document.getElementById('join-inp').value.trim();
   if(!raw){ toast('Paste the offer code','er'); return; }
   closeOv('join-ov');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
   setStatus('connecting…','wait');
-  var offer;
-  try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer code','er'); if(!anyConnected()) setStatus('idle'); return; }
+  var offer; try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer','er'); if(!anyConnected()) setStatus('idle'); return; }
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false};
   var pc=makePC(pid); peers[pid].pc=pc;
@@ -1428,8 +1356,7 @@ function doJoin(){
     .then(function(){ return gatherICE(pc); })
     .then(function(desc){
       document.getElementById('code-out').value=b64enc(JSON.stringify(sdpObj(desc)));
-      openOv('code-ov');
-      document.getElementById('bd').style.display='';
+      openOv('code-ov'); document.getElementById('bd').style.display='';
     })
     .catch(function(e){
       console.error('[RELAY] doJoin:',e); toast('Error: '+e.message,'er');
@@ -1442,13 +1369,14 @@ function copyCode(){ navigator.clipboard.writeText(document.getElementById('code
 
 function doDisconnectAll(){
   Object.keys(peers).forEach(function(pid){ try{peers[pid].pc.close();}catch(e){} });
-  peers={}; _pendingHostPid=null;
-  if(ws){ try{ws.close();}catch(e){} ws=null; wsReady=false; currentRoom=null; }
+  peers={};
+  if(ablyClient){ try{ablyClient.close();}catch(e){} ablyClient=null; ablyChannel=null; ablyReady=false; }
+  currentRoom=null; myAblyId=null;
   document.getElementById('room-pill').style.display='none';
   setStatus('idle'); goIdle();
 }
 
-// ── File list UI ──────────────────────────────────────
+// ── File list UI ──────────────────────────────────────────────────
 function addFileRow(id){
   var list=document.getElementById('flist');
   var empty=list.querySelector('.empty'); if(empty) empty.remove();
@@ -1459,8 +1387,7 @@ function addFileRow(id){
       +'<div class="fi-name" title="'+esc(f.name)+'">'+esc(f.name)+'</div>'
       +'<div class="fi-meta" id="fm-'+id+'">'+fmtBytes(f.size)+' · '+f.dir+'</div>'
       +'<div class="fi-bar"><div class="fi-fill" id="fb-'+id+'" style="width:0%"></div></div>'
-    +'</div>'
-    +'<div class="fi-act" id="fa-'+id+'"></div>';
+    +'</div><div class="fi-act" id="fa-'+id+'"></div>';
   list.insertBefore(d,list.firstChild);
 }
 function updateFileRowMeta(id){
@@ -1483,7 +1410,7 @@ function dlFile(id){
   setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
 }
 
-// ── QR code ───────────────────────────────────────────
+// ── QR code ───────────────────────────────────────────────────────
 function drawQR(container,text){
   container.innerHTML='';
   try{
@@ -1501,11 +1428,9 @@ function qrBuild(text){
   var ver=1; while(ver<=10&&CAP[ver-1]<data.length) ver++;
   if(ver>10) throw new Error('Too long');
   var CW=[[16,10],[28,16],[44,26],[64,36],[86,48],[108,60],[124,72],[154,86],[182,100],[216,114]];
-  var dataCW=CW[ver-1][0],ecCW=CW[ver-1][1];
-  var bits=[];
+  var dataCW=CW[ver-1][0],ecCW=CW[ver-1][1],bits=[];
   function pb(v,l){ for(var i=l-1;i>=0;i--) bits.push((v>>i)&1); }
-  pb(4,4); pb(data.length,ver<10?8:16);
-  data.forEach(function(b){ pb(b,8); });
+  pb(4,4); pb(data.length,ver<10?8:16); data.forEach(function(b){ pb(b,8); });
   pb(0,4); while(bits.length%8) bits.push(0);
   var PAD=[0xEC,0x11],pi=0;
   while(bits.length<dataCW*8){ pb(PAD[pi%2],8); pi++; }
@@ -1514,25 +1439,13 @@ function qrBuild(text){
   var n=4*ver+17,mx=[],used=[];
   for(var i=0;i<n;i++){ mx[i]=new Array(n).fill(null); used[i]=new Array(n).fill(false); }
   function mark(r,c,v){ mx[r][c]=v; used[r][c]=true; }
-  function finder(tr,tc){
-    for(var r=-1;r<=7;r++) for(var c=-1;c<=7;c++){
-      var nr=tr+r,nc=tc+c; if(nr<0||nr>=n||nc<0||nc>=n) continue;
-      var d=(r>=0&&r<=6&&(c===0||c===6))||(c>=0&&c<=6&&(r===0||r===6))||(r>=2&&r<=4&&c>=2&&c<=4);
-      mark(nr,nc,(r===-1||r===7||c===-1||c===7)?false:d);
-    }
-  }
+  function finder(tr,tc){ for(var r=-1;r<=7;r++) for(var c=-1;c<=7;c++){ var nr=tr+r,nc=tc+c; if(nr<0||nr>=n||nc<0||nc>=n) continue; var d=(r>=0&&r<=6&&(c===0||c===6))||(c>=0&&c<=6&&(r===0||r===6))||(r>=2&&r<=4&&c>=2&&c<=4); mark(nr,nc,(r===-1||r===7||c===-1||c===7)?false:d); } }
   finder(0,0); finder(0,n-7); finder(n-7,0);
   for(var i=8;i<n-8;i++){ if(!used[6][i]) mark(6,i,i%2===0); if(!used[i][6]) mark(i,6,i%2===0); }
   var AP=[[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
-  if(ver>=2){ var ap=AP[ver]||[]; for(var ai=0;ai<ap.length;ai++) for(var aj=0;aj<ap.length;aj++){
-    var ar=ap[ai],ac=ap[aj]; if(used[ar][ac]) continue;
-    for(var dr=-2;dr<=2;dr++) for(var dc3=-2;dc3<=2;dc3++) mark(ar+dr,ac+dc3,Math.abs(dr)===2||Math.abs(dc3)===2||(dr===0&&dc3===0));
-  }}
+  if(ver>=2){ var ap=AP[ver]||[]; for(var ai=0;ai<ap.length;ai++) for(var aj=0;aj<ap.length;aj++){ var ar=ap[ai],ac=ap[aj]; if(used[ar][ac]) continue; for(var dr=-2;dr<=2;dr++) for(var dc3=-2;dc3<=2;dc3++) mark(ar+dr,ac+dc3,Math.abs(dr)===2||Math.abs(dc3)===2||(dr===0&&dc3===0)); } }
   mark(n-8,8,true);
-  for(var i=0;i<=8;i++){
-    if(!used[i][8]) mark(i,8,false); if(!used[8][i]) mark(8,i,false);
-    if(i<8){ if(!used[n-1-i][8]) mark(n-1-i,8,false); if(!used[8][n-1-i]) mark(8,n-1-i,false); }
-  }
+  for(var i=0;i<=8;i++){ if(!used[i][8]) mark(i,8,false); if(!used[8][i]) mark(8,i,false); if(i<8){ if(!used[n-1-i][8]) mark(n-1-i,8,false); if(!used[8][n-1-i]) mark(8,n-1-i,false); } }
   var bi=0;
   for(var ci=0;ci<Math.ceil((n-1)/2);ci++){
     var col=n-1-ci*2; if(col===6) col=5;
@@ -1540,10 +1453,7 @@ function qrBuild(text){
       var row=(ci%2===0)?(n-1-ii):ii;
       for(var side=0;side<2;side++){
         var cc=col-side; if(cc<0) continue;
-        if(!used[row][cc]){
-          var bit=(bi<all.length*8)?((all[bi>>3]>>(7-(bi&7)))&1):0; bi++;
-          mx[row][cc]=((bit^((row+cc)%2))===1);
-        }
+        if(!used[row][cc]){ var bit=(bi<all.length*8)?((all[bi>>3]>>(7-(bi&7)))&1):0; bi++; mx[row][cc]=((bit^((row+cc)%2))===1); }
       }
     }
   }
@@ -1557,10 +1467,9 @@ function utf8b(str){ var out=[]; for(var i=0;i<str.length;i++){ var cv=str.charC
 var GFe=new Array(512),GFl=new Array(256);
 (function(){ var x=1; for(var i=0;i<255;i++){ GFe[i]=x; GFl[x]=i; x<<=1; if(x&256) x^=285; } for(var i=255;i<512;i++) GFe[i]=GFe[i-255]; })();
 function gfm(a,b){ return(a&&b)?GFe[GFl[a]+GFl[b]]:0; }
-function gfpow(x,n){ return GFe[(GFl[x]*n)%255]; }
+function gfpow(x,p){ return GFe[(GFl[x]*p)%255]; }
 function rsEnc(data,ec){
-  var gen=[1];
-  for(var i=0;i<ec;i++){ var rv=new Array(gen.length+1).fill(0); for(var a=0;a<gen.length;a++) for(var b=0;b<2;b++) rv[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]); gen=rv; }
+  var gen=[1]; for(var i=0;i<ec;i++){ var rv=new Array(gen.length+1).fill(0); for(var a=0;a<gen.length;a++) for(var b=0;b<2;b++) rv[a+b]^=gfm(gen[a],[1,gfpow(2,i)][b]); gen=rv; }
   var msg=data.slice(); for(var i=0;i<ec;i++) msg.push(0);
   for(var i=0;i<data.length;i++){ var cv=msg[i]; if(!cv) continue; for(var j=1;j<=ec;j++) msg[i+j]^=gfm(gen[j],cv); }
   return msg.slice(data.length);
