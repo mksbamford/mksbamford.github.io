@@ -316,8 +316,10 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
         <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
           <input type="file" multiple onchange="dzPick(event)">
           <div style="font-size:20px;margin-bottom:4px">⊞</div>
-          drop or tap to pick
+          drop files or folders · tap to pick
         </div>
+        <input type="file" id="dz-folder" webkitdirectory multiple style="display:none" onchange="dzFolderPick(event)">
+        <button class="btn full" style="margin-top:6px;font-size:11px" onclick="document.getElementById('dz-folder').click()">📁 Send Folder</button>
       </div>
 
       <div class="sec" id="files-sec" style="flex:1">
@@ -334,10 +336,14 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
         <div id="quick-drop"
           ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
           <input type="file" multiple id="qd-input" onchange="qdPick(event)">
+          <input type="file" id="qd-folder" webkitdirectory multiple style="display:none" onchange="qdFolderPick(event)">
           <span class="qd-icon">📤</span>
-          <div class="qd-title">Drop files to send</div>
+          <div class="qd-title">Drop files or folders to send</div>
           <div class="qd-sub">Files will be queued and sent once your peer connects</div>
-          <button class="btn primary" style="pointer-events:auto;position:relative;z-index:1" onclick="qdBrowse(event)">Choose Files</button>
+          <div style="display:flex;gap:8px;pointer-events:auto;position:relative;z-index:1">
+            <button class="btn primary" onclick="qdBrowse(event)">Choose Files</button>
+            <button class="btn" onclick="qdFolderBrowse(event)">📁 Folder</button>
+          </div>
         </div>
 
         <!-- Request a File button -->
@@ -1042,20 +1048,33 @@ function onText(pid,raw){
     toast('File declined','er');
 
   } else if(m.t==='fs'){
-    transfers[m.id]={pid:pid,name:m.name,size:m.size,mime:m.mime,chunks:[],got:0};
-    fdata[m.id]={name:m.name,size:m.size,dir:'↓ receiving',pct:0};
+    transfers[m.id]={pid:pid,name:m.name,path:m.path||m.name,size:m.size,mime:m.mime,chunks:[],got:0,writer:null};
+    fdata[m.id]={name:m.path||m.name,size:m.size,dir:'↓ receiving',pct:0};
     addFileRow(m.id);
-    // Show a progress card in the chat so the user can see transfer happening
-    addChatProgress(m.id, m.name, m.size, p?p.name:null);
+    addChatProgress(m.id, m.path||m.name, m.size, p?p.name:null);
+    // Try to open a streaming file writer (Chrome/Edge only)
+    openStreamWriter(m.id, m.path||m.name, m.mime);
 
   } else if(m.t==='fe'){
     var ft=transfers[m.id]; if(!ft) return;
-    var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
-    fdata[m.id].blob=blob; fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
-    updateFileRow(m.id);
-    updateChatProgress(m.id, 100, blob, ft.name);
-    if(isImage(ft.name)) addImgMsg(blob,ft.name,'them',p?p.name:null);
-    toast('✓ '+ft.name+' saved','ok');
+    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
+    if(ft.writer){
+      // Streaming path — flush and close the writer
+      ft.writer.close().then(function(){
+        updateFileRow(m.id);
+        updateChatProgress(m.id,100,null,ft.path);
+        if(isImage(ft.path)) toast('✓ '+ft.name+' saved','ok');
+        else toast('✓ '+ft.name+' saved','ok');
+      }).catch(function(e){ toast('Save error: '+e.message,'er'); });
+    } else {
+      // In-memory fallback — assemble blob and trigger download
+      var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+      fdata[m.id].blob=blob;
+      updateFileRow(m.id);
+      updateChatProgress(m.id,100,blob,ft.path);
+      if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?p.name:null);
+      toast('✓ '+ft.name+' saved','ok');
+    }
     delete transfers[m.id];
 
   } else if(m.t==='meet'){
@@ -1118,7 +1137,14 @@ function handleSigAnswerApply(m){
 function onBin(pid,buf){
   var ftid=new TextDecoder().decode(new Uint8Array(buf,0,36)).replace(/\s+$/,'');
   var ft=transfers[ftid]; if(!ft) return;
-  var chunk=buf.slice(36); ft.chunks.push(chunk); ft.got+=chunk.byteLength;
+  var chunk=buf.slice(36);
+  ft.got+=chunk.byteLength;
+  if(ft.writer){
+    // Streaming — write directly to disk, don't accumulate in RAM
+    ft.writer.write(new Uint8Array(chunk));
+  } else {
+    ft.chunks.push(chunk);
+  }
   var pct=Math.round(ft.got/ft.size*100);
   if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↓ receiving'; }
   var bar=document.getElementById('fb-'+ftid); if(bar) bar.style.width=pct+'%';
@@ -1128,17 +1154,20 @@ function onBin(pid,buf){
 }
 
 // ── File announce / respond ───────────────────────────────────────
-function announceFile(file,pid){
+// file: File object; pid: target peer or null for all; relativePath: optional folder path
+function announceFile(file, pid, relativePath){
   var targets=pid?[pid]:connectedPeers();
   if(!targets.length){ toast('Not connected','er'); return; }
+  var path=relativePath||file.webkitRelativePath||file.name;
+  var displayName=path.includes('/')?path:file.name;
   targets.forEach(function(tpid){
     var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
     var ftid=mkId();
     pendingSend[ftid]={file:file,pid:tpid};
-    fdata[ftid]={name:file.name,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
+    fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
     addFileRow(ftid);
-    p.dc.send(JSON.stringify({t:'fa',id:ftid,name:file.name,size:file.size,mime:file.type}));
-    addMsg('📤 Sent to '+p.name+': '+file.name+' ('+fmtBytes(file.size)+')','me');
+    p.dc.send(JSON.stringify({t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type}));
+    addMsg('📤 '+p.name+': '+displayName+' ('+fmtBytes(file.size)+')','me');
   });
 }
 
@@ -1171,7 +1200,7 @@ function respondFile(ftid,pid,accept){
 function startSendingFile(ftid,file,pid){
   var p=peers[pid];
   if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
-  p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,size:file.size,mime:file.type}));
+  p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,path:fdata[ftid]?fdata[ftid].name:file.name,size:file.size,mime:file.type}));
   var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
   var offset=0;
   var lastPct=-1;
@@ -1214,16 +1243,107 @@ function startSendingFile(ftid,file,pid){
   pump();
 }
 
+// ── Streaming file writer (Chrome/Edge — File System Access API) ──
+var _rootDirHandle = null;
+
+async function openStreamWriter(ftid, path, mime){
+  var ft=transfers[ftid]; if(!ft) return;
+  if(!window.showSaveFilePicker) return; // not supported — fall back to in-memory
+  var parts=path.replace(/\\/g,'/').split('/');
+  var fileName=parts[parts.length-1];
+  var isNested=parts.length>1;
+  try{
+    if(isNested){
+      // Folder transfer — ask for destination directory once per session
+      if(!_rootDirHandle){
+        _rootDirHandle=await window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
+      }
+      if(!_rootDirHandle) return; // user cancelled — fall back to in-memory
+      var dirHandle=_rootDirHandle;
+      for(var i=0;i<parts.length-1;i++){
+        dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
+      }
+      var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
+      ft.writer=await fileHandle.createWritable();
+    } else {
+      var fh=await window.showSaveFilePicker({
+        suggestedName:fileName,
+        types:[{description:'File',accept:{[mime||'application/octet-stream']:[]}}]
+      }).catch(function(){ return null; });
+      if(!fh) return; // user cancelled
+      ft.writer=await fh.createWritable();
+    }
+  } catch(e){
+    console.warn('[RELAY] Stream writer unavailable, using in-memory:',e.message);
+    ft.writer=null;
+  }
+}
+
+function resetDirCache(){ _rootDirHandle=null; }
+
+// ── Collect files from drop including folders (recursive) ─────────
+function collectDroppedItems(dataTransfer){
+  return new Promise(function(resolve){
+    var files=[], pending=0;
+    var items=Array.from(dataTransfer.items||[]);
+    if(!items.length){ resolve(Array.from(dataTransfer.files||[])); return; }
+    function done(){ if(--pending===0) resolve(files); }
+    function addEntry(entry, prefix){
+      if(entry.isFile){
+        pending++;
+        entry.file(function(f){
+          try{ Object.defineProperty(f,'webkitRelativePath',{value:prefix+f.name,writable:false,configurable:true}); }catch(e){}
+          files.push(f); done();
+        });
+      } else if(entry.isDirectory){
+        var reader=entry.createReader();
+        function read(){
+          pending++;
+          reader.readEntries(function(entries){
+            if(!entries.length){ done(); return; }
+            entries.forEach(function(e){ addEntry(e,prefix+entry.name+'/'); });
+            done(); read(); // readEntries may paginate
+          });
+        }
+        read();
+      }
+    }
+    pending=1;
+    items.forEach(function(item){
+      var entry=item.webkitGetAsEntry&&item.webkitGetAsEntry();
+      if(entry){ pending++; addEntry(entry,''); }
+      else if(item.getAsFile){ var f=item.getAsFile(); if(f){ files.push(f); } }
+    });
+    done();
+  });
+}
+
 // ── Drop zones ────────────────────────────────────────────────────
 function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
-function dzDrop(e){ e.preventDefault(); dzOut(); Array.from(e.dataTransfer.files).forEach(function(f){ announceFile(f,targetPid()); }); }
+function dzDrop(e){
+  e.preventDefault(); dzOut();
+  collectDroppedItems(e.dataTransfer).then(function(files){
+    resetDirCache();
+    files.forEach(function(f){ announceFile(f,targetPid(),f.webkitRelativePath||null); });
+  });
+}
 function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
+function dzFolderPick(e){
+  resetDirCache();
+  Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid(),f.webkitRelativePath||null); });
+  e.target.value='';
+}
 function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
 function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
-function qdDrop(e){ e.preventDefault(); qdOut(); queueFiles(Array.from(e.dataTransfer.files)); }
+function qdDrop(e){
+  e.preventDefault(); qdOut();
+  collectDroppedItems(e.dataTransfer).then(function(files){ resetDirCache(); queueFiles(files); });
+}
 function qdPick(e){ queueFiles(Array.from(e.target.files)); e.target.value=''; }
+function qdFolderPick(e){ resetDirCache(); queueFiles(Array.from(e.target.files)); e.target.value=''; }
 function qdBrowse(e){ e.stopPropagation(); document.getElementById('qd-input').click(); }
+function qdFolderBrowse(e){ e.stopPropagation(); document.getElementById('qd-folder').click(); }
 
 function queueFiles(files){
   files.forEach(function(f){ queuedFiles.push(f); });
@@ -1460,23 +1580,26 @@ function updateChatProgress(ftid, pct, blob, name){
   var el=document.getElementById('cmsg-'+ftid); if(!el) return;
   var cpct=document.getElementById('cpct-'+ftid); if(cpct) cpct.textContent=pct+'%';
   var cbar=document.getElementById('cp-'+ftid); if(cbar) cbar.style.width=pct+'%';
-  if(blob&&pct===100){
-    // Trigger download with correct filename
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url; a.download=name;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+  if(pct===100){
+    if(blob){
+      // In-memory fallback — trigger download
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url; a.download=name.split('/').pop(); // use filename only, not full path
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+    }
     // Update card to show done
+    var fname=name.split('/').pop();
     var bubble=el.querySelector('.bubble');
     if(bubble){
       bubble.innerHTML='<div style="display:flex;align-items:center;gap:8px">'
-        +'<span style="font-size:18px">'+fileIcon(name)+'</span>'
+        +'<span style="font-size:18px">'+fileIcon(fname)+'</span>'
         +'<div style="flex:1;min-width:0">'
           +'<div style="font-size:12px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</div>'
           +'<div style="font-size:10px;color:#00ff88">✓ saved to downloads</div>'
         +'</div>'
-        +'<button class="btn" style="padding:4px 9px;font-size:11px;flex-shrink:0" onclick="dlFile(\''+ftid+'\')">↓</button>'
+        +(blob?'<button class="btn" style="padding:4px 9px;font-size:11px;flex-shrink:0" onclick="dlFile(\''+ftid+'\')">↓</button>':'')
       +'</div>';
     }
   }
