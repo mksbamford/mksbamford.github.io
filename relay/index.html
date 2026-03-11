@@ -678,21 +678,18 @@ function joinAblyRoom(roomId){
 }
 
 function subscribeChannel(roomId){
-  // Leave old channel if switching rooms
-  if(ablyChannel) ablyChannel.detach();
+  // Unsubscribe old listeners without detaching (detach mid-connect causes race errors)
+  if(ablyChannel){
+    try{ ablyChannel.unsubscribe(); ablyChannel.presence.unsubscribe(); }catch(e){}
+  }
 
   ablyChannel=ablyClient.channels.get('relay:'+roomId);
 
   // Presence: when someone enters the channel, we initiate a WebRTC connection to them
   ablyChannel.presence.subscribe('enter',function(member){
     var remoteId=member.clientId;
-    if(remoteId===myAblyId) return;  // ignore ourselves
-    // We initiate to anyone who joined before us (they'll answer)
-    // Convention: lower ID initiates to higher ID to avoid double-offers
-    if(myAblyId < remoteId){
-      ablyInitiate(remoteId);
-    }
-    // else: wait for their offer via 'signal' message
+    if(remoteId===myAblyId) return;
+    if(myAblyId < remoteId) ablyInitiate(remoteId);
   });
 
   // Receive signals addressed to us
@@ -702,8 +699,10 @@ function subscribeChannel(roomId){
     onAblySignal(d);
   });
 
-  // Announce our presence — this triggers 'enter' on existing members
-  ablyChannel.presence.enter({});
+  // Announce our presence
+  ablyChannel.presence.enter({}).catch(function(e){
+    console.warn('[RELAY] presence.enter failed:',e.message);
+  });
 
   // Get existing members and initiate to each one we should connect to
   ablyChannel.presence.get(function(err,members){
@@ -1044,17 +1043,19 @@ function onText(pid,raw){
 
   } else if(m.t==='fs'){
     transfers[m.id]={pid:pid,name:m.name,size:m.size,mime:m.mime,chunks:[],got:0};
-    fdata[m.id]={name:m.name,size:m.size,dir:'↓ from '+(p?p.name:'?'),pct:0};
+    fdata[m.id]={name:m.name,size:m.size,dir:'↓ receiving',pct:0};
     addFileRow(m.id);
+    // Show a progress card in the chat so the user can see transfer happening
+    addChatProgress(m.id, m.name, m.size, p?p.name:null);
 
   } else if(m.t==='fe'){
     var ft=transfers[m.id]; if(!ft) return;
     var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
     fdata[m.id].blob=blob; fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
     updateFileRow(m.id);
+    updateChatProgress(m.id, 100, blob, ft.name);
     if(isImage(ft.name)) addImgMsg(blob,ft.name,'them',p?p.name:null);
-    else addMsg('✓ '+ft.name+' received — tap ↓ to save','sys');
-    toast('Received: '+ft.name,'ok');
+    toast('✓ '+ft.name+' saved','ok');
     delete transfers[m.id];
 
   } else if(m.t==='meet'){
@@ -1121,7 +1122,8 @@ function onBin(pid,buf){
   var pct=Math.round(ft.got/ft.size*100);
   if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↓ receiving'; }
   var bar=document.getElementById('fb-'+ftid); if(bar) bar.style.width=pct+'%';
-  // Throttle meta text updates to every 5% to avoid DOM thrash
+  var cbar=document.getElementById('cp-'+ftid); if(cbar) cbar.style.width=pct+'%';
+  var cpct=document.getElementById('cpct-'+ftid); if(cpct) cpct.textContent=pct+'%';
   if(pct%5===0||pct===100) updateFileRowMeta(ftid);
 }
 
@@ -1421,16 +1423,59 @@ function updateFileRowMeta(id){
   var pctStr=(f.pct>0&&f.pct<100)?' · '+f.pct+'%':'';
   m2.textContent=fmtBytes(f.size)+' · '+f.dir+pctStr;
 }
+function addChatProgress(ftid, name, size, fromName){
+  var el=document.createElement('div');
+  el.className='msg them'; el.id='cmsg-'+ftid;
+  var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
+  el.innerHTML=lbl
+    +'<div class="bubble" style="min-width:200px;max-width:280px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        +'<span style="font-size:18px">'+fileIcon(name)+'</span>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:12px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</div>'
+          +'<div style="font-size:10px;color:#444">'+fmtBytes(size)+'</div>'
+        +'</div>'
+        +'<span id="cpct-'+ftid+'" style="font-size:11px;color:#00ff88;flex-shrink:0">0%</span>'
+      +'</div>'
+      +'<div style="height:4px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
+        +'<div id="cp-'+ftid+'" style="height:100%;background:#00ff88;border-radius:2px;width:0%;transition:width .1s"></div>'
+      +'</div>'
+    +'</div>'
+    +'<div class="ts">'+nowTs()+'</div>';
+  var msgs=document.getElementById('msgs'); msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+}
+
+function updateChatProgress(ftid, pct, blob, name){
+  var el=document.getElementById('cmsg-'+ftid); if(!el) return;
+  var cpct=document.getElementById('cpct-'+ftid); if(cpct) cpct.textContent=pct+'%';
+  var cbar=document.getElementById('cp-'+ftid); if(cbar) cbar.style.width=pct+'%';
+  if(blob&&pct===100){
+    // Trigger download with correct filename
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+    // Update card to show done
+    var bubble=el.querySelector('.bubble');
+    if(bubble){
+      bubble.innerHTML='<div style="display:flex;align-items:center;gap:8px">'
+        +'<span style="font-size:18px">'+fileIcon(name)+'</span>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:12px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</div>'
+          +'<div style="font-size:10px;color:#00ff88">✓ saved to downloads</div>'
+        +'</div>'
+        +'<button class="btn" style="padding:4px 9px;font-size:11px;flex-shrink:0" onclick="dlFile(\''+ftid+'\')">↓</button>'
+      +'</div>';
+    }
+  }
+}
+
 function updateFileRow(id){
   var f=fdata[id]; if(!f) return;
   updateFileRowMeta(id);
   var bar=document.getElementById('fb-'+id); if(bar) bar.style.width=f.pct+'%';
   if(f.blob&&f.pct===100){
-    // Auto-download — no button needed
-    var a=document.createElement('a');
-    a.href=URL.createObjectURL(f.blob); a.download=f.name; a.click();
-    setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
-    // Show a small "save again" button in case they need it
     var act=document.getElementById('fa-'+id);
     if(act) act.innerHTML='<button class="btn" style="padding:5px 10px;font-size:11px" title="Save again" onclick="dlFile(\''+id+'\')">↓</button>';
     if(bar) bar.parentElement.style.display='none';
@@ -1438,8 +1483,10 @@ function updateFileRow(id){
 }
 function dlFile(id){
   var f=fdata[id]; if(!f||!f.blob) return;
-  var a=document.createElement('a'); a.href=URL.createObjectURL(f.blob); a.download=f.name; a.click();
-  setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
+  var url=URL.createObjectURL(f.blob);
+  var a=document.createElement('a'); a.href=url; a.download=f.name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },60000);
 }
 
 // ── QR code ───────────────────────────────────────────────────────
