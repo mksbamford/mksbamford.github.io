@@ -1051,6 +1051,7 @@ function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 function finishConnect(pid){
   var p=peers[pid]; if(!p) return;
   if(p._onConnect){ p._onConnect(); delete p._onConnect; }
+  removeInlineShareCard();
   introNewPeerMesh(pid);
   if(document.getElementById('splash').style.display!=='none') showChatUI();
   document.getElementById('ci').disabled=false;
@@ -1085,7 +1086,18 @@ function onText(pid,raw){
     addMsg(m.text,'them',p?p.name:null);
 
   } else if(m.t==='fa'){
-    showFileRequest(pid,m);
+    if(m.fid){
+      // Part of a folder batch — auto-accept if folder already accepted, else queue
+      var fb=folderBatches[m.fid];
+      if(fb&&fb.accepted){
+        if(p&&p.dc&&p.dc.readyState==='open') p.dc.send(JSON.stringify({t:'fr',id:m.id}));
+      } else if(fb){
+        fb.pending=fb.pending||[];
+        fb.pending.push({pid:pid,id:m.id,p:p});
+      }
+    } else {
+      showFileRequest(pid,m);
+    }
 
   } else if(m.t==='fr'){
     var ps=pendingSend[m.id]; if(!ps) return;
@@ -1150,8 +1162,8 @@ function onText(pid,raw){
     delete transfers[m.id];
 
   } else if(m.t==='folder'){
-    // Receiver learns a folder batch is coming — set up zip accumulator for fallback browsers
-    folderBatches[m.fid]={name:m.name,count:m.count,done:0,files:{}};
+    folderBatches[m.fid]={name:m.name,count:m.count,done:0,files:{},accepted:false,pending:[]};
+    showFolderRequest(pid,m);
 
   } else if(m.t==='meet'){
     handleMeet(pid,m);
@@ -1301,6 +1313,49 @@ function showFileRequest(pid,m){
       +'<button class="btn danger" onclick="respondFile(\''+m.id+'\',\''+pid+'\',false)">✕ Decline</button>'
     +'</div>';
   var msgs=document.getElementById('msgs'); msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+}
+
+function showFolderRequest(pid,m){
+  var p=peers[pid];
+  var el=document.createElement('div'); el.className='fi-request'; el.id='freq-folder-'+m.fid;
+  var totalSize=m.size||0;
+  el.innerHTML='<div class="fi-req-head">'
+    +'<span class="fi-req-icon">📁</span>'
+    +'<div style="flex:1;min-width:0">'
+      +'<div class="fi-req-name">'+esc(m.name)+'</div>'
+      +'<div class="fi-req-size">'+m.count+' files'+( totalSize?' · '+fmtBytes(totalSize):'')+(p?' · from '+esc(p.name):'')+'</div>'
+    +'</div></div>'
+    +'<div class="fi-req-btns">'
+      +'<button class="btn primary" onclick="respondFolder(\''+m.fid+'\',\''+pid+'\',true)">✓ Accept</button>'
+      +'<button class="btn danger" onclick="respondFolder(\''+m.fid+'\',\''+pid+'\',false)">✕ Decline</button>'
+    +'</div>';
+  var msgs=document.getElementById('msgs'); msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight;
+}
+
+function respondFolder(fid,pid,accept){
+  var card=document.getElementById('freq-folder-'+fid);
+  var batch=folderBatches[fid];
+  if(card){
+    if(accept) card.innerHTML='<div style="font-size:11px;color:#00ff88;padding:4px 0">✓ Accepted folder — receiving…</div>';
+    else{ card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>'; setTimeout(function(){if(card.parentNode)card.remove();},1500); }
+  }
+  if(!batch) return;
+  if(accept){
+    batch.accepted=true;
+    // Accept all queued fa messages
+    (batch.pending||[]).forEach(function(item){
+      var pp=peers[item.pid];
+      if(pp&&pp.dc&&pp.dc.readyState==='open') pp.dc.send(JSON.stringify({t:'fr',id:item.id}));
+    });
+    batch.pending=[];
+  } else {
+    // Decline all queued
+    (batch.pending||[]).forEach(function(item){
+      var pp=peers[item.pid];
+      if(pp&&pp.dc&&pp.dc.readyState==='open') pp.dc.send(JSON.stringify({t:'fd',id:item.id}));
+    });
+    delete folderBatches[fid];
+  }
 }
 
 function respondFile(ftid,pid,accept){
@@ -1485,6 +1540,30 @@ function flushQueue(pid){
 }
 
 // ── UI transitions ────────────────────────────────────────────────
+function showInlineShareCard(roomId){
+  var link=roomLink(roomId);
+  var el=document.createElement('div');
+  el.id='share-card'; el.className='msg sys';
+  el.style.cssText='align-self:stretch;margin:8px 0';
+  el.innerHTML='<div style="background:#0a0a0a;border:1px solid #1e1e1e;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center">'
+    +'<div style="font-size:11px;color:#444;letter-spacing:.08em;text-transform:uppercase">Waiting for peer</div>'
+    +'<div id="inline-qr" style="background:#fff;padding:8px;border-radius:4px"></div>'
+    +'<div style="display:flex;gap:6px;width:100%;max-width:320px">'
+      +'<div style="flex:1;background:#111;border:1px solid #1e1e1e;border-radius:4px;padding:7px 10px;font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(link)+'</div>'
+      +'<button class="btn" style="flex-shrink:0;padding:7px 12px;font-size:11px" onclick="copyRoomLink();this.textContent=\'✓\';var b=this;setTimeout(function(){b.textContent=\'copy\'},1500)">copy</button>'
+    +'</div>'
+    +'<div style="font-size:10px;color:#2a2a2a">Share this link · peer connects automatically</div>'
+  +'</div>';
+  var msgs=document.getElementById('msgs');
+  msgs.appendChild(el);
+  msgs.scrollTop=msgs.scrollHeight;
+  drawQR(document.getElementById('inline-qr'), link);
+}
+
+function removeInlineShareCard(){
+  var el=document.getElementById('share-card'); if(el) el.remove();
+}
+
 function showChatUI(){
   document.querySelectorAll('.ov.open').forEach(function(o){ o.classList.remove('open'); });
   document.getElementById('splash').style.display='none';
@@ -1535,13 +1614,14 @@ function startHost(){
     history.replaceState(null,'','?room='+currentRoom);
     joinAblyRoom(currentRoom);
     updateRoomUI();
-    switchTab('ws');
-    openOv('host-ov');
     if(!anyConnected()) setStatus('waiting…','wait');
-    document.getElementById('bd').style.display='';
     document.getElementById('share-sec').style.display='';
     drawQR(document.getElementById('qr-wrap'),PAGE_URL);
     document.getElementById('page-url-el').textContent=PAGE_URL;
+    document.getElementById('bd').style.display='';
+    // Go straight into chat view — no overlay
+    showChatUI();
+    showInlineShareCard(currentRoom);
     return;  // Ably handles connection — no SDP needed
   }
 
