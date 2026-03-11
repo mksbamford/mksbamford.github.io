@@ -492,6 +492,7 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 <div id="toast"></div>
 
 <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fflate/0.8.2/fflate.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
 //  RELAY — serverless mesh P2P
@@ -524,6 +525,7 @@ var transfers   = {};  // ftid → { pid, name, size, mime, chunks[], got }
 var fdata       = {};  // ftid → { name, size, dir, pct, blob? }
 var pendingSend = {};  // ftid → { file, pid }
 var queuedFiles = [];
+var folderBatches = {}; // fid → { name, count, done, files:{path→Uint8Array} }
 
 // Ably
 var ablyClient  = null;
@@ -913,8 +915,8 @@ function sendChat(){
 }
 function ciKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
 function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
-function ciFilePick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
-function ciFolderPick(e){ resetDirCache(); Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid(),f.webkitRelativePath||null); }); e.target.value=''; }
+function ciFilePick(e){ sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
+function ciFolderPick(e){ resetDirCache(); sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
 function ciPickFiles(){ closeAttachMenu(); document.getElementById('ci-file').click(); }
 function ciPickFolder(){ closeAttachMenu(); document.getElementById('ci-folder').click(); }
 function toggleAttachMenu(e){
@@ -1092,7 +1094,7 @@ function onText(pid,raw){
     toast('File declined','er');
 
   } else if(m.t==='fs'){
-    transfers[m.id]={pid:pid,name:m.name,path:m.path||m.name,size:m.size,mime:m.mime,chunks:[],got:0,writer:null};
+    transfers[m.id]={pid:pid,name:m.name,path:m.path||m.name,fid:m.fid||null,size:m.size,mime:m.mime,chunks:[],got:0,writer:null};
     fdata[m.id]={name:m.path||m.name,size:m.size,dir:'↓ receiving',pct:0};
     addFileRow(m.id);
     addChatProgress(m.id, m.path||m.name, m.size, p?p.name:null);
@@ -1107,19 +1109,40 @@ function onText(pid,raw){
       ft.writer.close().then(function(){
         updateFileRow(m.id);
         updateChatProgress(m.id,100,null,ft.path);
-        if(isImage(ft.path)) toast('✓ '+ft.name+' saved','ok');
-        else toast('✓ '+ft.name+' saved','ok');
+        toast('✓ '+ft.name+' saved','ok');
       }).catch(function(e){ toast('Save error: '+e.message,'er'); });
     } else {
-      // In-memory fallback — assemble blob and trigger download
-      var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
-      fdata[m.id].blob=blob;
-      updateFileRow(m.id);
-      updateChatProgress(m.id,100,blob,ft.path);
-      if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?p.name:null);
-      toast('✓ '+ft.name+' saved','ok');
+      // In-memory path — for folder batches accumulate into zip, else download directly
+      var data=new Uint8Array(concatChunks(ft.chunks,ft.got));
+      var fid=ft.fid;
+      if(fid&&folderBatches[fid]){
+        var batch=folderBatches[fid];
+        // Store relative path (strip leading root folder name — it's the zip name)
+        var relPath=ft.path.split('/').slice(1).join('/') || ft.name;
+        batch.files[relPath]=data;
+        batch.done++;
+        updateFileRow(m.id);
+        updateChatProgress(m.id,100,null,ft.path);
+        if(batch.done>=batch.count){
+          // All files received — build and download zip
+          buildAndDownloadZip(batch.name, batch.files);
+          delete folderBatches[fid];
+          toast('✓ Folder "'+batch.name+'" saved as zip','ok');
+        }
+      } else {
+        var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+        fdata[m.id].blob=blob;
+        updateFileRow(m.id);
+        updateChatProgress(m.id,100,blob,ft.path);
+        if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?p.name:null);
+        toast('✓ '+ft.name+' saved','ok');
+      }
     }
     delete transfers[m.id];
+
+  } else if(m.t==='folder'){
+    // Receiver learns a folder batch is coming — set up zip accumulator for fallback browsers
+    folderBatches[m.fid]={name:m.name,count:m.count,done:0,files:{}};
 
   } else if(m.t==='meet'){
     handleMeet(pid,m);
@@ -1199,7 +1222,8 @@ function onBin(pid,buf){
 
 // ── File announce / respond ───────────────────────────────────────
 // file: File object; pid: target peer or null for all; relativePath: optional folder path
-function announceFile(file, pid, relativePath){
+// folderBatch: optional {fid, name} — groups this file with others in the same folder send
+function announceFile(file, pid, relativePath, folderBatch){
   var targets=pid?[pid]:connectedPeers();
   if(!targets.length){ toast('Not connected','er'); return; }
   var path=relativePath||file.webkitRelativePath||file.name;
@@ -1210,13 +1234,51 @@ function announceFile(file, pid, relativePath){
     pendingSend[ftid]={file:file,pid:tpid};
     fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
     addFileRow(ftid);
-    p.dc.send(JSON.stringify({t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type}));
+    var msg={t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type};
+    if(folderBatch) msg.fid=folderBatch.fid;
+    p.dc.send(JSON.stringify(msg));
     addMsg('📤 '+p.name+': '+displayName+' ('+fmtBytes(file.size)+')','me');
   });
 }
 
+// Announce a whole folder as a batch — sends a 'folder' header first, then all files
+function announceFolder(files, pid){
+  var targets=pid?[pid]:connectedPeers();
+  if(!targets.length){ toast('Not connected','er'); return; }
+  // Derive folder root name from first file's path
+  var rootName=(files[0].webkitRelativePath||files[0].name).split('/')[0]||'folder';
+  var fid=mkId();
+  var totalSize=files.reduce(function(s,f){ return s+f.size; },0);
+  targets.forEach(function(tpid){
+    var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
+    p.dc.send(JSON.stringify({t:'folder',fid:fid,name:rootName,count:files.length,size:totalSize}));
+  });
+  files.forEach(function(f){
+    announceFile(f, pid, f.webkitRelativePath||null, {fid:fid,name:rootName});
+  });
+}
+
+function sendFiles(files, pid){
+  // Split into folder batches and plain files
+  var folderMap={}, plain=[];
+  files.forEach(function(f){
+    var rel=f.webkitRelativePath||'';
+    if(rel.includes('/')){
+      var root=rel.split('/')[0];
+      if(!folderMap[root]) folderMap[root]=[];
+      folderMap[root].push(f);
+    } else { plain.push(f); }
+  });
+  plain.forEach(function(f){ announceFile(f,pid); });
+  Object.keys(folderMap).forEach(function(root){
+    var connected=anyConnected();
+    if(connected) announceFolder(folderMap[root],pid);
+    else folderMap[root].forEach(function(f){ queuedFiles.push(f); });
+  });
+  if(Object.keys(folderMap).length&&!anyConnected()) renderQueuedFiles();
+}
+
 function showFileRequest(pid,m){
-  var p=peers[pid];
   var el=document.createElement('div'); el.className='fi-request'; el.id='freq-'+m.id;
   el.innerHTML='<div class="fi-req-head">'
     +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
@@ -1367,17 +1429,10 @@ function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.
 function dzOut(){ document.getElementById('dz').classList.remove('over'); }
 function dzDrop(e){
   e.preventDefault(); dzOut();
-  collectDroppedItems(e.dataTransfer).then(function(files){
-    resetDirCache();
-    files.forEach(function(f){ announceFile(f,targetPid(),f.webkitRelativePath||null); });
-  });
+  collectDroppedItems(e.dataTransfer).then(function(files){ resetDirCache(); sendFiles(files, targetPid()); });
 }
-function dzPick(e){ Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid()); }); e.target.value=''; }
-function dzFolderPick(e){
-  resetDirCache();
-  Array.from(e.target.files).forEach(function(f){ announceFile(f,targetPid(),f.webkitRelativePath||null); });
-  e.target.value='';
-}
+function dzPick(e){ sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
+function dzFolderPick(e){ resetDirCache(); sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
 function qdOver(e){ e.preventDefault(); document.getElementById('quick-drop').classList.add('over'); }
 function qdOut(){ document.getElementById('quick-drop').classList.remove('over'); }
 function qdDrop(e){
@@ -1413,9 +1468,7 @@ function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
 function flushQueue(pid){
   if(!queuedFiles.length) return;
   var files=queuedFiles.slice(); queuedFiles=[]; renderQueuedFiles();
-  files.forEach(function(f){
-    announceFile(f, pid, f.webkitRelativePath||null);
-  });
+  sendFiles(files, pid);
 }
 
 // ── UI transitions ────────────────────────────────────────────────
@@ -1448,7 +1501,7 @@ function goIdle(){
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear();
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={};
 }
 
 // ── Manual SDP host ───────────────────────────────────────────────
@@ -1669,7 +1722,114 @@ function dlFile(id){
   setTimeout(function(){ URL.revokeObjectURL(url); },60000);
 }
 
-// ── QR code ───────────────────────────────────────────────────────
+function concatChunks(chunks, totalSize){
+  var out=new Uint8Array(totalSize), off=0;
+  chunks.forEach(function(c){ out.set(new Uint8Array(c),off); off+=c.byteLength; });
+  return out.buffer;
+}
+
+// ── Minimal ZIP builder (uncompressed/stored method) ─────────────
+// Used as fallback on Firefox/Safari where File System Access API is unavailable.
+// Produces a valid ZIP with folder structure preserved.
+function buildAndDownloadZip(folderName, files){
+  // files: { relativePath → Uint8Array }
+  var enc=new TextEncoder();
+  var parts=[];
+  var centralDir=[];
+  var offset=0;
+
+  function u16(n){ var b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,n,true); return b; }
+  function u32(n){ var b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n,true); return b; }
+
+  function crc32(data){
+    var crc=0xFFFFFFFF, table=crc32.t;
+    if(!table){
+      table=crc32.t=new Uint32Array(256);
+      for(var i=0;i<256;i++){
+        var c=i;
+        for(var j=0;j<8;j++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);
+        table[i]=c;
+      }
+    }
+    for(var k=0;k<data.length;k++) crc=table[(crc^data[k])&0xFF]^(crc>>>8);
+    return (crc^0xFFFFFFFF)>>>0;
+  }
+
+  var now=new Date();
+  var dosDate=((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate();
+  var dosTime=(now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1);
+
+  Object.keys(files).forEach(function(path){
+    var data=files[path];
+    var nameBytes=enc.encode(path);
+    var crc=crc32(data);
+    var size=data.length;
+
+    // Local file header
+    var lfh=new Uint8Array(30+nameBytes.length);
+    var dv=new DataView(lfh.buffer);
+    dv.setUint32(0,0x04034b50,true);  // signature
+    dv.setUint16(4,20,true);           // version needed
+    dv.setUint16(6,0,true);            // flags
+    dv.setUint16(8,0,true);            // compression (stored)
+    dv.setUint16(10,dosTime,true);
+    dv.setUint16(12,dosDate,true);
+    dv.setUint32(14,crc,true);
+    dv.setUint32(18,size,true);        // compressed size
+    dv.setUint32(22,size,true);        // uncompressed size
+    dv.setUint16(26,nameBytes.length,true);
+    dv.setUint16(28,0,true);           // extra field length
+    lfh.set(nameBytes,30);
+
+    // Central directory entry
+    var cde=new Uint8Array(46+nameBytes.length);
+    var cdv=new DataView(cde.buffer);
+    cdv.setUint32(0,0x02014b50,true);  // signature
+    cdv.setUint16(4,20,true);          // version made by
+    cdv.setUint16(6,20,true);          // version needed
+    cdv.setUint16(8,0,true);
+    cdv.setUint16(10,0,true);
+    cdv.setUint16(12,dosTime,true);
+    cdv.setUint16(14,dosDate,true);
+    cdv.setUint32(16,crc,true);
+    cdv.setUint32(20,size,true);
+    cdv.setUint32(24,size,true);
+    cdv.setUint16(28,nameBytes.length,true);
+    cdv.setUint16(30,0,true);          // extra
+    cdv.setUint16(32,0,true);          // comment
+    cdv.setUint16(34,0,true);          // disk start
+    cdv.setUint16(36,0,true);          // internal attr
+    cdv.setUint32(38,0,true);          // external attr
+    cdv.setUint32(42,offset,true);     // local header offset
+    cde.set(nameBytes,46);
+
+    parts.push(lfh); parts.push(data);
+    centralDir.push(cde);
+    offset+=lfh.length+size;
+  });
+
+  var cdSize=centralDir.reduce(function(s,c){ return s+c.length; },0);
+
+  // End of central directory record
+  var eocd=new Uint8Array(22);
+  var edv=new DataView(eocd.buffer);
+  edv.setUint32(0,0x06054b50,true);
+  edv.setUint16(4,0,true);
+  edv.setUint16(6,0,true);
+  edv.setUint16(8,centralDir.length,true);
+  edv.setUint16(10,centralDir.length,true);
+  edv.setUint32(12,cdSize,true);
+  edv.setUint32(16,offset,true);
+  edv.setUint16(20,0,true);
+
+  var allParts=parts.concat(centralDir).concat([eocd]);
+  var blob=new Blob(allParts,{type:'application/zip'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download=folderName+'.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+}
 function drawQR(container,text){
   container.innerHTML='';
   try{
