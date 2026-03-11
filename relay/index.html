@@ -525,6 +525,7 @@ var fdata       = {};  // ftid → { name, size, dir, pct, blob? }
 var pendingSend = {};  // ftid → { file, pid }
 var queuedFiles = [];
 var folderBatches = {}; // fid → { name, count, done, files:{path→Uint8Array} }
+var pendingFolderFa = {}; // fid → [{pid,id}] — fa messages that arrived before folder header
 
 // Ably
 var ablyClient  = null;
@@ -1087,13 +1088,15 @@ function onText(pid,raw){
 
   } else if(m.t==='fa'){
     if(m.fid){
-      // Part of a folder batch — auto-accept if folder already accepted, else queue
       var fb=folderBatches[m.fid];
       if(fb&&fb.accepted){
         if(p&&p.dc&&p.dc.readyState==='open') p.dc.send(JSON.stringify({t:'fr',id:m.id}));
       } else if(fb){
-        fb.pending=fb.pending||[];
-        fb.pending.push({pid:pid,id:m.id,p:p});
+        fb.pending.push({pid:pid,id:m.id});
+      } else {
+        // folder message not yet received — park it
+        pendingFolderFa[m.fid]=pendingFolderFa[m.fid]||[];
+        pendingFolderFa[m.fid].push({pid:pid,id:m.id});
       }
     } else {
       showFileRequest(pid,m);
@@ -1126,29 +1129,28 @@ function onText(pid,raw){
     var ft=transfers[m.id]; if(!ft) return;
     fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
     if(ft.writer){
-      // Streaming path — flush and close the writer
       ft.writer.close().then(function(){
         updateFileRow(m.id);
         updateChatProgress(m.id,100,null,ft.path);
         toast('✓ '+ft.name+' saved','ok');
       }).catch(function(e){ toast('Save error: '+e.message,'er'); });
     } else {
-      // In-memory path — for folder batches accumulate into zip, else download directly
-      var data=new Uint8Array(concatChunks(ft.chunks,ft.got));
-      var fid=ft.fid;
-      if(fid&&folderBatches[fid]){
-        var batch=folderBatches[fid];
-        // Store relative path (strip leading root folder name — it's the zip name)
+      var fid2=ft.fid;
+      if(fid2&&folderBatches[fid2]){
+        var batch=folderBatches[fid2];
         var relPath=ft.path.split('/').slice(1).join('/') || ft.name;
+        var data=new Uint8Array(concatChunks(ft.chunks,ft.got));
         batch.files[relPath]=data;
         batch.done++;
+        // Update progress bar but don't trigger individual download
         updateFileRow(m.id);
-        updateChatProgress(m.id,100,null,ft.path);
+        var cpct=document.getElementById('cpct-'+m.id); if(cpct) cpct.textContent='✓';
+        var cbar=document.getElementById('cp-'+m.id); if(cbar) cbar.parentElement.style.display='none';
         if(batch.done>=batch.count){
-          // All files received — build and download zip
-          buildAndDownloadZip(batch.name, batch.files);
-          delete folderBatches[fid];
-          toast('✓ Folder "'+batch.name+'" saved as zip','ok');
+          // All files in — build zip blob and show a single download button
+          var zipBlob=buildZipBlob(batch.name, batch.files);
+          showFolderDownloadCard(fid2, batch.name, zipBlob, p?p.name:null);
+          delete folderBatches[fid2];
         }
       } else {
         var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
@@ -1163,6 +1165,11 @@ function onText(pid,raw){
 
   } else if(m.t==='folder'){
     folderBatches[m.fid]={name:m.name,count:m.count,done:0,files:{},accepted:false,pending:[]};
+    // Drain any fa messages that arrived before the folder header
+    (pendingFolderFa[m.fid]||[]).forEach(function(item){
+      folderBatches[m.fid].pending.push(item);
+    });
+    delete pendingFolderFa[m.fid];
     showFolderRequest(pid,m);
 
   } else if(m.t==='meet'){
@@ -1593,7 +1600,7 @@ function goIdle(){
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={};
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={};
 }
 
 // ── Manual SDP host ───────────────────────────────────────────────
@@ -1825,7 +1832,7 @@ function concatChunks(chunks, totalSize){
 // ── Minimal ZIP builder (uncompressed/stored method) ─────────────
 // Used as fallback on Firefox/Safari where File System Access API is unavailable.
 // Produces a valid ZIP with folder structure preserved.
-function buildAndDownloadZip(folderName, files){
+function buildZipBlob(folderName, files){
   // files: { relativePath → Uint8Array }
   var enc=new TextEncoder();
   var parts=[];
@@ -1917,13 +1924,34 @@ function buildAndDownloadZip(folderName, files){
   edv.setUint16(20,0,true);
 
   var allParts=parts.concat(centralDir).concat([eocd]);
-  var blob=new Blob(allParts,{type:'application/zip'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url; a.download=folderName+'.zip';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+  return new Blob(allParts,{type:'application/zip'});
 }
+
+function showFolderDownloadCard(fid, folderName, zipBlob, fromName){
+  // Replace individual file progress cards with a single folder download card
+  var msgs=document.getElementById('msgs');
+  var el=document.createElement('div');
+  el.className='msg them'; el.id='folder-dl-'+fid;
+  var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
+  var _url=URL.createObjectURL(zipBlob);
+  el.innerHTML=lbl
+    +'<div class="bubble" style="min-width:220px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+        +'<span style="font-size:20px">📁</span>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'.zip</div>'
+          +'<div style="font-size:10px;color:#555">'+fmtBytes(zipBlob.size)+' · folder</div>'
+        +'</div>'
+      +'</div>'
+      +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>'
+    +'</div>'
+    +'<div class="ts">'+nowTs()+'</div>';
+  msgs.appendChild(el);
+  msgs.scrollTop=msgs.scrollHeight;
+  toast('📁 "'+folderName+'" ready — tap to save','ok');
+  setTimeout(function(){ URL.revokeObjectURL(_url); },300000); // 5 min
+}
+
 function drawQR(container,text){
   container.innerHTML='';
   try{
