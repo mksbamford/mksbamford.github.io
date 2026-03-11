@@ -842,6 +842,7 @@ function copyRoomLink(){
 // ── Request-a-file mode ───────────────────────────────────────────
 function startRequestFile(){
   var room=randomRoomId(); currentRoom=room;
+  history.replaceState(null,'','?room='+room);
   joinAblyRoom(room);
   var reqLink=PAGE_URL+'?req='+room;
   var lel=document.getElementById('room-link-el');
@@ -1239,7 +1240,7 @@ function announceFile(file, pid, relativePath, folderBatch){
   targets.forEach(function(tpid){
     var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
     var ftid=mkId();
-    pendingSend[ftid]={file:file,pid:tpid};
+    pendingSend[ftid]={file:file,pid:tpid,fid:folderBatch?folderBatch.fid:null};
     fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
     addFileRow(ftid);
     var msg={t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type};
@@ -1315,7 +1316,10 @@ function respondFile(ftid,pid,accept){
 function startSendingFile(ftid,file,pid){
   var p=peers[pid];
   if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
-  p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,path:fdata[ftid]?fdata[ftid].name:file.name,size:file.size,mime:file.type}));
+  var ps0=pendingSend[ftid]||{};
+  var fsMsg={t:'fs',id:ftid,name:file.name,path:fdata[ftid]?fdata[ftid].name:file.name,size:file.size,mime:file.type};
+  if(ps0.fid) fsMsg.fid=ps0.fid;
+  p.dc.send(JSON.stringify(fsMsg));
   var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
   var offset=0;
   var lastPct=-1;
@@ -1528,6 +1532,7 @@ function startHost(){
   // Also join / create an Ably room if configured
   if(AUTH_URL){
     if(!currentRoom) currentRoom=randomRoomId();
+    history.replaceState(null,'','?room='+currentRoom);
     joinAblyRoom(currentRoom);
     updateRoomUI();
     switchTab('ws');
