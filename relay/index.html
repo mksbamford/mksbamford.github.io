@@ -269,6 +269,11 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <div id="room-pill" onclick="copyRoomLink()" title="Copy room link">🔗 <span id="room-id-el"></span></div>
+      <div id="name-chip" onclick="openNameEdit()" title="Edit your name"
+        style="display:flex;align-items:center;gap:4px;font-size:11px;color:#555;cursor:pointer;padding:4px 8px;border:1px solid #1a1a1a;border-radius:4px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis">
+        <span style="color:#2a2a2a">you</span>
+        <span id="my-name-el" style="color:#aaa;overflow:hidden;text-overflow:ellipsis"></span>
+      </div>
       <div class="pill"><div class="dot" id="dot"></div><span id="st">idle</span></div>
     </div>
   </header>
@@ -397,6 +402,22 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 </div>
 
 <!-- MODALS -->
+<div class="ov" id="name-ov">
+  <div class="modal" style="max-width:320px">
+    <div class="modal-title">Your Name</div>
+    <div class="modal-sub">Shown to peers in this session. Max 32 chars.</div>
+    <div class="modal-field">
+      <input class="inp" id="name-inp" type="text" maxlength="32" placeholder="Enter a name…" autocomplete="off"
+        onkeydown="if(event.key==='Enter') saveName()">
+    </div>
+    <div style="font-size:10px;color:#2a2a2a;padding:0 0 8px 0" id="name-uid-hint"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeOv('name-ov')">Cancel</button>
+      <button class="btn primary" onclick="saveName()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="join-ov">
   <div class="modal">
     <div class="modal-title">Join Session</div>
@@ -518,7 +539,7 @@ var BUF_HIGH = 4 * 1024 * 1024;  // 4MB send buffer before pausing
 var BUF_LOW  = 1 * 1024 * 1024;  // 1MB resume threshold
 
 // ── State ─────────────────────────────────────────────────────────
-var peers       = {};  // pid → { pc, dc, name, _connected, _pump?, ablyId? }
+var peers       = {};  // pid → { pc, dc, name, uid, _connected, _pump?, ablyId? }
 var peerCount   = 0;
 var transfers   = {};  // ftid → { pid, name, size, mime, chunks[], got }
 var fdata       = {};  // ftid → { name, size, dir, pct, blob? }
@@ -533,6 +554,49 @@ var ablyChannel = null;
 var myAblyId    = null;   // unique ID for this client in this session
 var currentRoom = null;   // 6-char room ID
 var ablyReady   = false;
+
+// ── Identity ──────────────────────────────────────────────────────
+var myUid = (function(){
+  var k='relay_uid', c='abcdefghjkmnpqrstuvwxyz23456789', v=localStorage.getItem(k);
+  if(!v){ v=''; for(var i=0;i<4;i++) v+=c[Math.floor(Math.random()*c.length)]; localStorage.setItem(k,v); }
+  return v;
+})();
+var myName = localStorage.getItem('relay_name')||'';
+myName = myName.slice(0,32);
+
+function myDisplayName(){ return myName||('anon#'+myUid); }
+function peerDisplayName(pid){
+  var p=peers[pid]; if(!p) return '?';
+  // Show #uid suffix if any other connected peer has the same name
+  var clash=Object.values(peers).some(function(q){
+    return q!==p && q._connected && q.name && q.name===p.name;
+  });
+  return (p.name||('anon#'+(p.uid||'???')))+(clash&&p.uid?'#'+p.uid:'');
+}
+function updateNameChip(){
+  var el=document.getElementById('my-name-el'); if(!el) return;
+  el.textContent=myDisplayName()+'#'+myUid;
+}
+function openNameEdit(){
+  document.getElementById('name-inp').value=myName;
+  document.getElementById('name-uid-hint').textContent='Your permanent ID: #'+myUid;
+  openOv('name-ov');
+  setTimeout(function(){ var inp=document.getElementById('name-inp'); inp.focus(); inp.select(); },60);
+}
+function saveName(){
+  var raw=document.getElementById('name-inp').value.trim().replace(/[\x00-\x1f\x7f]/g,'').slice(0,32);
+  if(!raw){ toast('Name cannot be empty','er'); return; }
+  myName=raw;
+  localStorage.setItem('relay_name',myName);
+  updateNameChip();
+  closeOv('name-ov');
+  connectedPeers().forEach(function(pid){
+    var p=peers[pid];
+    if(p&&p.dc&&p.dc.readyState==='open')
+      p.dc.send(JSON.stringify({t:'rename',name:myName,uid:myUid}));
+  });
+  toast('Name updated','ok');
+}
 
 // Mode
 var REQ_MODE = false;
@@ -577,6 +641,7 @@ function randomRoomId(){
   var req=params.get('req');
 
   document.getElementById('logo-sub-txt').textContent='p2p · ably';
+  updateNameChip();
 
   if(req){
     // Request-a-file mode — show prompt to pick a file and auto-send
@@ -953,7 +1018,7 @@ function renderPeers(){
     var alive=p.dc&&p.dc.readyState==='open';
     var d=document.createElement('div'); d.className='peer-item';
     d.innerHTML='<div class="peer-dot'+(alive?'':' dead')+'"></div>'
-      +'<div class="peer-name">'+esc(p.name)+'</div>'
+      +'<div class="peer-name">'+esc(peerDisplayName(pid))+'</div>'
       +'<button class="peer-kick" onclick="kickPeer(\''+pid+'\')" title="Disconnect">✕</button>';
     list.appendChild(d);
   });
@@ -962,7 +1027,7 @@ function renderPeers(){
   pids.forEach(function(pid){
     var p=peers[pid];
     if(p.dc&&p.dc.readyState==='open'){
-      var opt=document.createElement('option'); opt.value=pid; opt.textContent=p.name;
+      var opt=document.createElement('option'); opt.value=pid; opt.textContent=peerDisplayName(pid);
       sel.appendChild(opt);
     }
   });
@@ -1009,7 +1074,7 @@ function makePC(pid){
       var p=peers[pid]; if(!p) return;
       if(p.dc&&p.dc.readyState==='open') return;
       console.warn('[RELAY] ICE failed for',pid,'— no TURN server available');
-      toast((p.name||'Peer')+' could not connect (ICE failed)','er');
+      toast(peerDisplayName(pid)+' could not connect (ICE failed)','er');
       peerGone(pid,true);
     } else if((s==='disconnected'||s==='closed')&&peers[pid]){
       var p2=peers[pid]; if(!p2) return;
@@ -1033,6 +1098,8 @@ function attachDC(pid,ch){
     if(pump){ delete peers[pid]._pump; pump(); }
   };
   ch.onopen=function(){
+    // Introduce ourselves immediately
+    ch.send(JSON.stringify({t:'hi',name:myName,uid:myUid}));
     if(peers[pid]&&!peers[pid]._connected){ peers[pid]._connected=true; finishConnect(pid); }
   };
 }
@@ -1057,8 +1124,9 @@ function finishConnect(pid){
   if(document.getElementById('splash').style.display!=='none') showChatUI();
   document.getElementById('ci').disabled=false;
   renderPeers(); updateStatus();
-  showBanner('⚡ '+p.name+' joined');
-  addMsg('⚡ '+p.name+' joined');
+  var dn=peerDisplayName(pid);
+  showBanner('⚡ '+dn+' joined');
+  addMsg('⚡ '+dn+' joined');
   setTimeout(function(){ flushQueue(pid); },300);
 }
 
@@ -1073,18 +1141,37 @@ function showBanner(text){
 function introNewPeerMesh(newPid){
   var existing=connectedPeers().filter(function(p){ return p!==newPid; });
   if(!existing.length) return;
-  peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:existing.map(function(p){ return {pid:p,name:peers[p].name}; })}));
+  peers[newPid].dc.send(JSON.stringify({t:'peer-list',peers:existing.map(function(p){ return {pid:p,name:peers[p].name,uid:peers[p].uid||''}; })}));
   existing.forEach(function(ePid){
-    peers[ePid].dc.send(JSON.stringify({t:'meet',pid:newPid,name:peers[newPid].name}));
+    peers[ePid].dc.send(JSON.stringify({t:'meet',pid:newPid,name:peers[newPid].name,uid:peers[newPid].uid||''}));
   });
 }
 
 function onText(pid,raw){
   var p=peers[pid];
-  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?p.name:null); return; }
+  var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?peerDisplayName(pid):null); return; }
 
-  if(m.t==='chat'){
-    addMsg(m.text,'them',p?p.name:null);
+  if(m.t==='hi'){
+    // Peer introducing themselves
+    if(p){ p.name=m.name||''; p.uid=m.uid||''; }
+    renderPeers(); updateStatus();
+    // Update the join banner/message now we have the real name
+    var dn=peerDisplayName(pid);
+    var joins=document.querySelectorAll('.msg.sys');
+    joins.forEach(function(el){ if(el.textContent==='⚡ Peer '+peerCount+' joined') el.textContent='⚡ '+dn+' joined'; });
+    return; // hi is silent — no chat bubble
+
+  } else if(m.t==='rename'){
+    if(!p) return;
+    var oldName=peerDisplayName(pid);
+    p.name=m.name||''; p.uid=m.uid||p.uid||'';
+    var newName=peerDisplayName(pid);
+    renderPeers();
+    if(oldName!==newName) addMsg(oldName+' is now '+newName,'sys');
+    return;
+
+  } else if(m.t==='chat'){
+    addMsg(m.text,'them',p?peerDisplayName(pid):null);
 
   } else if(m.t==='fa'){
     if(m.fid){
@@ -1108,20 +1195,20 @@ function onText(pid,raw){
     if(fdata[m.id]) fdata[m.id].dir='↑ sending';
     updateFileRowMeta(m.id);
     startSendingFile(m.id,ps.file,ps.pid);
-    addMsg('✓ '+(p?p.name:'Peer')+' accepted — sending '+ps.file.name,'sys');
+    addMsg('✓ '+(p?peerDisplayName(ps.pid):'Peer')+' accepted — sending '+ps.file.name,'sys');
 
   } else if(m.t==='fd'){
     var ps2=pendingSend[m.id]; delete pendingSend[m.id];
     if(fdata[m.id]) fdata[m.id].dir='✕ declined';
     updateFileRowMeta(m.id);
-    addMsg('✕ '+(p?p.name:'Peer')+' declined '+(ps2?ps2.file.name:'file'),'sys');
+    addMsg('✕ '+(p?peerDisplayName(pid):'Peer')+' declined '+(ps2?ps2.file.name:'file'),'sys');
     toast('File declined','er');
 
   } else if(m.t==='fs'){
     transfers[m.id]={pid:pid,name:m.name,path:m.path||m.name,fid:m.fid||null,size:m.size,mime:m.mime,chunks:[],got:0,writer:null};
     fdata[m.id]={name:m.path||m.name,size:m.size,dir:'↓ receiving',pct:0};
     addFileRow(m.id);
-    addChatProgress(m.id, m.path||m.name, m.size, p?p.name:null);
+    addChatProgress(m.id, m.path||m.name, m.size, p?peerDisplayName(pid):null);
     // Try to open a streaming file writer (Chrome/Edge only)
     openStreamWriter(m.id, m.path||m.name, m.mime);
 
@@ -1149,7 +1236,7 @@ function onText(pid,raw){
         if(batch.done>=batch.count){
           // All files in — build zip blob and show a single download button
           var zipBlob=buildZipBlob(batch.name, batch.files);
-          showFolderDownloadCard(fid2, batch.name, zipBlob, p?p.name:null);
+          showFolderDownloadCard(fid2, batch.name, zipBlob, p?peerDisplayName(pid):null);
           delete folderBatches[fid2];
         }
       } else {
@@ -1157,7 +1244,7 @@ function onText(pid,raw){
         fdata[m.id].blob=blob;
         updateFileRow(m.id);
         updateChatProgress(m.id,100,blob,ft.path);
-        if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?p.name:null);
+        if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?peerDisplayName(pid):null);
         toast('✓ '+ft.name+' saved','ok');
       }
     }
@@ -1188,7 +1275,7 @@ function onText(pid,raw){
 function handleMeet(introducerPid,m){
   var newPid=m.pid; if(peers[newPid]) return;
   peerCount++;
-  peers[newPid]={pc:null,dc:null,name:m.name||('Peer '+peerCount),_connected:false};
+  peers[newPid]={pc:null,dc:null,name:m.name||'',uid:m.uid||'',_connected:false};
   var pc=makePC(newPid); peers[newPid].pc=pc;
   var dc2=pc.createDataChannel('relay',{ordered:true}); attachDC(newPid,dc2);
   pc.createOffer()
@@ -1260,12 +1347,12 @@ function announceFile(file, pid, relativePath, folderBatch){
     var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
     var ftid=mkId();
     pendingSend[ftid]={file:file,pid:tpid,fid:folderBatch?folderBatch.fid:null};
-    fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+p.name,pct:0};
+    fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+peerDisplayName(tpid),pct:0};
     addFileRow(ftid);
     var msg={t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type};
     if(folderBatch) msg.fid=folderBatch.fid;
     p.dc.send(JSON.stringify(msg));
-    addMsg('📤 '+p.name+': '+displayName+' ('+fmtBytes(file.size)+')','me');
+    addMsg('📤 '+peerDisplayName(tpid)+': '+displayName+' ('+fmtBytes(file.size)+')','me');
   });
 }
 
