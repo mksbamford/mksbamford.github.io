@@ -500,9 +500,9 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 // After deploying relay-worker, set this to your worker URL:
 var AUTH_URL = 'https://snowy-feather-5c8c.markksbamford.workers.dev/token';
 
-var CHUNK    = 16 * 1024;
-var BUF_HIGH = 1024 * 1024;
-var BUF_LOW  = 256  * 1024;
+var CHUNK    = 64 * 1024;   // 64KB — good balance for real networks
+var BUF_HIGH = 4 * 1024 * 1024;  // 4MB send buffer before pausing
+var BUF_LOW  = 1 * 1024 * 1024;  // 1MB resume threshold
 
 // ── State ─────────────────────────────────────────────────────────
 var peers       = {};  // pid → { pc, dc, name, _connected, _pump?, ablyId? }
@@ -1174,8 +1174,12 @@ function startSendingFile(ftid,file,pid){
   p.dc.send(JSON.stringify({t:'fs',id:ftid,name:file.name,size:file.size,mime:file.type}));
   var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
   var offset=0;
+  var lastPct=-1;
+
   function pump(){
     if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted','er'); return; }
+
+    // Done
     if(offset>=file.size){
       p.dc.send(JSON.stringify({t:'fe',id:ftid}));
       if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
@@ -1184,8 +1188,13 @@ function startSendingFile(ftid,file,pid){
       if(isImage(file.name)) addImgMsg(file,file.name,'me',null);
       return;
     }
+
+    // Backpressured — wait for bufferedamountlow event
     if(p.dc.bufferedAmount>=BUF_HIGH){ peers[pid]._pump=pump; return; }
+
+    // Read next chunk then immediately loop — no setTimeout yield
     file.slice(offset,offset+CHUNK).arrayBuffer().then(function(ab){
+      if(!p.dc||p.dc.readyState!=='open'){ toast('Transfer interrupted','er'); return; }
       var out=new Uint8Array(36+ab.byteLength);
       out.set(idBytes,0); out.set(new Uint8Array(ab),36);
       try{
@@ -1195,8 +1204,10 @@ function startSendingFile(ftid,file,pid){
         if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↑ sending'; }
         var bar=document.getElementById('fb-'+ftid);
         if(bar) bar.style.width=pct+'%';
-        if(pct%5===0) updateFileRowMeta(ftid);
-        setTimeout(pump,0);
+        // Update text every 5% to avoid DOM thrash
+        if(pct!==lastPct&&pct%5===0){ lastPct=pct; updateFileRowMeta(ftid); }
+        // Tight loop — only yield to event loop when backpressured
+        pump();
       }catch(e){ toast('Send error: '+e.message,'er'); }
     }).catch(function(e){ toast('Read error: '+e.message,'er'); });
   }
