@@ -618,6 +618,9 @@ function isImage(n){ return /\.(jpe?g|png|gif|webp|svg|bmp|avif)$/i.test(n); }
 function fileIcon(n){ var x=n.split('.').pop().toLowerCase(); return {pdf:'📄',jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',bmp:'🖼',mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',zip:'📦',tar:'📦',gz:'📦',js:'💻',ts:'💻',py:'💻',html:'💻',json:'💻',txt:'📝',md:'📝',docx:'📝',xlsx:'📊',csv:'📊'}[x]||'📁'; }
 function connectedPeers(){ return Object.keys(peers).filter(function(pid){ var p=peers[pid]; return p.dc&&p.dc.readyState==='open'; }); }
 function anyConnected(){ return connectedPeers().length>0; }
+function alreadyConnectedTo(ablyId){
+  return Object.values(peers).some(function(p){ return p.ablyId===ablyId && p._connected; });
+}
 
 // ── Modals ────────────────────────────────────────────────────────
 function openOv(id){ document.getElementById(id).classList.add('open'); }
@@ -704,7 +707,9 @@ function subscribeChannel(roomId){
   ablyChannel.presence.subscribe('enter',function(member){
     var remoteId=member.clientId;
     if(remoteId===myAblyId) return;
-    if(myAblyId < remoteId) ablyInitiate(remoteId);
+    if(alreadyConnectedTo(remoteId)) return; // already have a live DC to this peer
+    // Small random backoff (0–400ms) so both sides don't send offers simultaneously
+    if(myAblyId < remoteId) setTimeout(function(){ ablyInitiate(remoteId); }, Math.random()*400);
   });
 
   // Receive signals addressed to us
@@ -720,14 +725,18 @@ function subscribeChannel(roomId){
   });
 
   // Get existing members and initiate to each one we should connect to
-  ablyChannel.presence.get(function(err,members){
-    if(err||!members) return;
-    members.forEach(function(member){
-      var remoteId=member.clientId;
-      if(remoteId===myAblyId) return;
-      if(myAblyId < remoteId) ablyInitiate(remoteId);
+  // Use a longer delay here so the 'enter' subscription fires first and deduplicates
+  setTimeout(function(){
+    ablyChannel.presence.get(function(err,members){
+      if(err||!members) return;
+      members.forEach(function(member){
+        var remoteId=member.clientId;
+        if(remoteId===myAblyId) return;
+        if(alreadyConnectedTo(remoteId)) return;
+        if(myAblyId < remoteId) ablyInitiate(remoteId);
+      });
     });
-  });
+  }, 600);
 
   updateRoomUI();
   if(!anyConnected()) setStatus('waiting for peer…','wait');
@@ -1278,6 +1287,7 @@ function sendFiles(files, pid){
 }
 
 function showFileRequest(pid,m){
+  var p=peers[pid];
   var el=document.createElement('div'); el.className='fi-request'; el.id='freq-'+m.id;
   el.innerHTML='<div class="fi-req-head">'
     +'<span class="fi-req-icon">'+fileIcon(m.name)+'</span>'
