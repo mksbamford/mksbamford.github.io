@@ -688,6 +688,7 @@ function subscribeChannel(roomId){
   if(ablyChannel){
     try{ ablyChannel.unsubscribe(); ablyChannel.presence.unsubscribe(); }catch(e){}
   }
+  initiating.clear();
 
   ablyChannel=ablyClient.channels.get('relay:'+roomId);
 
@@ -725,11 +726,26 @@ function subscribeChannel(roomId){
 }
 
 // We send an SDP offer to remoteAblyId via Ably
+var initiating = new Set(); // guard against duplicate ablyInitiate for same remote
+
 function ablyInitiate(remoteAblyId){
+  if(initiating.has(remoteAblyId)) return; // already in progress
+  initiating.add(remoteAblyId);
+
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:remoteAblyId};
   var pc=makePC(pid); peers[pid].pc=pc;
   var dc=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc);
+
+  // Give up if not connected within 20s
+  var connTimeout=setTimeout(function(){
+    if(peers[pid]&&!peers[pid]._connected){
+      console.warn('[RELAY] Connection timeout for',remoteAblyId);
+      initiating.delete(remoteAblyId);
+      peerGone(pid,false);
+      if(!anyConnected()) setStatus('waiting for peer…','wait');
+    }
+  },20000);
 
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
@@ -737,7 +753,16 @@ function ablyInitiate(remoteAblyId){
     .then(function(desc){
       ablySend(remoteAblyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
     })
-    .catch(function(e){ console.error('[RELAY] ablyInitiate:',e); delete peers[pid]; });
+    .catch(function(e){
+      console.error('[RELAY] ablyInitiate:',e);
+      clearTimeout(connTimeout);
+      initiating.delete(remoteAblyId);
+      delete peers[pid];
+    });
+
+  // Clear the guard once connected (or on timeout above)
+  var origFinish=finishConnect;
+  peers[pid]._onConnect=function(){ clearTimeout(connTimeout); initiating.delete(remoteAblyId); };
 }
 
 function ablySend(toAblyId, payload){
@@ -996,6 +1021,7 @@ function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 
 function finishConnect(pid){
   var p=peers[pid]; if(!p) return;
+  if(p._onConnect){ p._onConnect(); delete p._onConnect; }
   introNewPeerMesh(pid);
   if(document.getElementById('splash').style.display!=='none') showChatUI();
   document.getElementById('ci').disabled=false;
@@ -1369,7 +1395,9 @@ function removeQueued(i){ queuedFiles.splice(i,1); renderQueuedFiles(); }
 function flushQueue(pid){
   if(!queuedFiles.length) return;
   var files=queuedFiles.slice(); queuedFiles=[]; renderQueuedFiles();
-  files.forEach(function(f){ announceFile(f,pid); });
+  files.forEach(function(f){
+    announceFile(f, pid, f.webkitRelativePath||null);
+  });
 }
 
 // ── UI transitions ────────────────────────────────────────────────
@@ -1402,7 +1430,7 @@ function goIdle(){
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
-  setStatus('idle'); fdata={}; transfers={}; pendingSend={};
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear();
 }
 
 // ── Manual SDP host ───────────────────────────────────────────────
