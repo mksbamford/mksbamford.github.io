@@ -95,7 +95,7 @@ textarea.inp{resize:none}
 .fi-inf{flex:1;min-width:0}
 .fi-name{color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
 .fi-meta{color:#333;font-size:10px;margin-top:1px}
-.fi-bar{height:2px;background:#1e1e1e;border-radius:1px;margin-top:4px;overflow:hidden}
+.fi-bar{height:4px;background:#1e1e1e;border-radius:2px;margin-top:6px;overflow:hidden}
 .fi-fill{height:100%;background:#00ff88;border-radius:1px;transition:width .12s}
 .fi-act{flex-shrink:0;display:flex;gap:4px}
 .empty{color:#252525;font-size:11px;text-align:center;padding:14px;border:1px dashed #1a1a1a;border-radius:4px}
@@ -633,6 +633,8 @@ function joinAblyRoom(roomId){
   currentRoom=roomId.toUpperCase();
   myAblyId=myAblyId||mkId();
 
+  if(!anyConnected()) setStatus('connecting…','wait');
+
   // If already connected to Ably, just switch channel
   if(ablyClient&&ablyClient.connection.state==='connected'){
     subscribeChannel(currentRoom);
@@ -661,12 +663,17 @@ function joinAblyRoom(roomId){
     recover: function(_, cb){ cb(true); }
   });
 
+  ablyClient.connection.on('connecting', function(){ if(!anyConnected()) setStatus('connecting…','wait'); });
   ablyClient.connection.on('connected',function(){
     ablyReady=true;
+    if(!anyConnected()) setStatus('ready','wait');
     subscribeChannel(currentRoom);
   });
+  ablyClient.connection.on('disconnected',function(){ if(!anyConnected()) setStatus('reconnecting…','wait'); });
+  ablyClient.connection.on('suspended',function(){ if(!anyConnected()) setStatus('offline','err'); });
   ablyClient.connection.on('failed',function(){
-    toast('Ably connection failed','er');
+    setStatus('failed','err');
+    toast('Could not connect — check your network','er');
   });
 }
 
@@ -709,6 +716,7 @@ function subscribeChannel(roomId){
   });
 
   updateRoomUI();
+  if(!anyConnected()) setStatus('waiting for peer…','wait');
 }
 
 // We send an SDP offer to remoteAblyId via Ably
@@ -934,10 +942,19 @@ function makePC(pid){
     var s=pc.iceConnectionState;
     if((s==='connected'||s==='completed')&&peers[pid]&&!peers[pid]._connected){
       peers[pid]._connected=true; finishConnect(pid);
+    } else if(s==='checking'&&!anyConnected()){
+      setStatus('connecting…','wait');
     } else if(s==='failed'){
-      toast((peers[pid]?peers[pid].name:'Peer')+' failed','er'); peerGone(pid,true);
+      // If DC is already open the connection is fine despite ICE reporting failure
+      var p=peers[pid]; if(!p) return;
+      if(p.dc&&p.dc.readyState==='open') return;
+      console.warn('[RELAY] ICE failed for',pid,'— no TURN server available');
+      toast((p.name||'Peer')+' could not connect (ICE failed)','er');
+      peerGone(pid,true);
     } else if((s==='disconnected'||s==='closed')&&peers[pid]){
-      addMsg('✕ '+peers[pid].name+' left'); peerGone(pid,true);
+      var p2=peers[pid]; if(!p2) return;
+      if(p2._connected) addMsg('✕ '+p2.name+' left');
+      peerGone(pid,true);
     }
   };
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
@@ -1102,8 +1119,10 @@ function onBin(pid,buf){
   var ft=transfers[ftid]; if(!ft) return;
   var chunk=buf.slice(36); ft.chunks.push(chunk); ft.got+=chunk.byteLength;
   var pct=Math.round(ft.got/ft.size*100);
-  if(fdata[ftid]) fdata[ftid].pct=pct;
+  if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↓ receiving'; }
   var bar=document.getElementById('fb-'+ftid); if(bar) bar.style.width=pct+'%';
+  // Throttle meta text updates to every 5% to avoid DOM thrash
+  if(pct%5===0||pct===100) updateFileRowMeta(ftid);
 }
 
 // ── File announce / respond ───────────────────────────────────────
@@ -1170,9 +1189,11 @@ function startSendingFile(ftid,file,pid){
       try{
         p.dc.send(out.buffer);
         offset+=ab.byteLength;
-        if(fdata[ftid]) fdata[ftid].pct=Math.min(99,Math.round(offset/file.size*100));
+        var pct=Math.min(99,Math.round(offset/file.size*100));
+        if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↑ sending'; }
         var bar=document.getElementById('fb-'+ftid);
-        if(bar) bar.style.width=(fdata[ftid]?fdata[ftid].pct:0)+'%';
+        if(bar) bar.style.width=pct+'%';
+        if(pct%5===0) updateFileRowMeta(ftid);
         setTimeout(pump,0);
       }catch(e){ toast('Send error: '+e.message,'er'); }
     }).catch(function(e){ toast('Read error: '+e.message,'er'); });
@@ -1396,15 +1417,22 @@ function addFileRow(id){
 }
 function updateFileRowMeta(id){
   var f=fdata[id]; if(!f) return;
-  var m2=document.getElementById('fm-'+id); if(m2) m2.textContent=fmtBytes(f.size)+' · '+f.dir;
+  var m2=document.getElementById('fm-'+id); if(!m2) return;
+  var pctStr=(f.pct>0&&f.pct<100)?' · '+f.pct+'%':'';
+  m2.textContent=fmtBytes(f.size)+' · '+f.dir+pctStr;
 }
 function updateFileRow(id){
   var f=fdata[id]; if(!f) return;
   updateFileRowMeta(id);
   var bar=document.getElementById('fb-'+id); if(bar) bar.style.width=f.pct+'%';
   if(f.blob&&f.pct===100){
+    // Auto-download — no button needed
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(f.blob); a.download=f.name; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },60000);
+    // Show a small "save again" button in case they need it
     var act=document.getElementById('fa-'+id);
-    if(act) act.innerHTML='<button class="btn" style="padding:5px 10px;font-size:11px" onclick="dlFile(\''+id+'\')">↓</button>';
+    if(act) act.innerHTML='<button class="btn" style="padding:5px 10px;font-size:11px" title="Save again" onclick="dlFile(\''+id+'\')">↓</button>';
     if(bar) bar.parentElement.style.display='none';
   }
 }
