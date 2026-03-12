@@ -1,8 +1,9 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>RELAY — P2P</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -13,18 +14,18 @@ html,body{
   font-size:13px; line-height:1.6; overflow:hidden;
   overscroll-behavior:none; -webkit-text-size-adjust:100%;
 }
-#app{ display:flex; flex-direction:column; height:100dvh; }
+#app{ display:flex; flex-direction:column; height:100dvh; height:calc(var(--app-h,100dvh)); }
 
 /* HEADER */
 header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));
-  height:48px; border-bottom:1px solid #1a1a1a; background:#111; flex-shrink:0; gap:10px;
+display:flex;align-items:center;justify-content:space-between;
+padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));
+height:48px; border-bottom:1px solid #1a1a1a; background:#111; flex-shrink:0; gap:10px;
 }
 .logo{font-size:15px;font-weight:700;letter-spacing:.2em;color:#00ff88;white-space:nowrap}
 .logo-sub{font-size:10px;color:#2a2a2a;margin-left:6px;font-weight:400}
 .pill{display:flex;align-items:center;gap:6px;font-size:11px;color:#444;
-  background:#191919;border:1px solid #1e1e1e;padding:3px 10px;border-radius:20px;white-space:nowrap}
+background:#191919;border:1px solid #1e1e1e;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;background:#2a2a2a;flex-shrink:0;transition:background .3s}
 .dot.on{background:#00ff88;box-shadow:0 0 6px #00ff88;animation:pulse 2s infinite}
 .dot.wait{background:#ffaa00;animation:pulse .8s infinite}
@@ -36,8 +37,8 @@ main{display:flex;flex:1;overflow:hidden;min-height:0}
 
 /* SIDEBAR */
 #sidebar{
-  width:260px;flex-shrink:0;border-right:1px solid #1a1a1a;
-  display:flex;flex-direction:column;background:#111;overflow-y:auto;
+width:260px;flex-shrink:0;border-right:1px solid #1a1a1a;
+display:flex;flex-direction:column;background:#111;overflow-y:auto;
 }
 #sidebar::-webkit-scrollbar{width:3px}
 #sidebar::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
@@ -46,11 +47,11 @@ main{display:flex;flex:1;overflow:hidden;min-height:0}
 
 /* BUTTONS */
 .btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  padding:9px 14px;border:1px solid #252525;background:#181818;color:#bbb;
-  font-family:inherit;font-size:12px;cursor:pointer;border-radius:4px;
-  transition:all .15s;white-space:nowrap;min-height:40px;
-  -webkit-tap-highlight-color:transparent;user-select:none;
+display:inline-flex;align-items:center;justify-content:center;gap:6px;
+padding:9px 14px;border:1px solid #252525;background:#181818;color:#bbb;
+font-family:inherit;font-size:12px;cursor:pointer;border-radius:4px;
+transition:all .15s;white-space:nowrap;min-height:40px;
+-webkit-tap-highlight-color:transparent;user-select:none;
 }
 .btn:hover{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.06)}
 .btn:active{transform:scale(.97)}
@@ -63,9 +64,9 @@ main{display:flex;flex:1;overflow:hidden;min-height:0}
 
 /* INPUTS */
 .inp{
-  width:100%;background:#141414;border:1px solid #202020;color:#e8e8e8;
-  font-family:inherit;font-size:16px;padding:9px 11px;border-radius:4px;
-  outline:none;transition:border-color .15s;
+width:100%;background:#141414;border:1px solid #202020;color:#e8e8e8;
+font-family:inherit;font-size:16px;padding:9px 11px;border-radius:4px;
+outline:none;transition:border-color .15s;
 }
 .inp:focus{border-color:#00ff88}
 .inp::placeholder{color:#2a2a2a}
@@ -77,15 +78,15 @@ textarea.inp{resize:none}
 .qr-caption{font-size:10px;color:#333;text-align:center;margin:7px 0 5px}
 .copy-row{display:flex;gap:6px;width:100%}
 .copy-val{flex:1;min-width:0;background:#141414;border:1px solid #1e1e1e;color:#444;
-  font-family:inherit;font-size:10px;padding:7px 9px;border-radius:4px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+font-family:inherit;font-size:10px;padding:7px 9px;border-radius:4px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .copy-val:hover{border-color:#00ff88;color:#00ff88}
 
 /* FILE SECTIONS */
 #drop-sec{display:none}
 #dz{border:1px dashed #222;border-radius:6px;padding:16px 14px;
-  text-align:center;color:#333;font-size:11px;cursor:pointer;
-  transition:all .15s;position:relative}
+text-align:center;color:#333;font-size:11px;cursor:pointer;
+transition:all .15s;position:relative}
 #dz:hover,#dz.over{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.04)}
 #dz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 #files-sec{display:none;flex:1;min-height:0}
@@ -108,14 +109,14 @@ textarea.inp{resize:none}
 
 /* Quick-send drop zone (shown on splash) */
 #quick-drop{
-  width:100%;max-width:480px;
-  border:2px dashed #222;border-radius:12px;
-  padding:40px 24px;text-align:center;cursor:pointer;
-  transition:all .2s;position:relative;
-  background:#111;
+width:100%;max-width:480px;
+border:2px dashed #222;border-radius:12px;
+padding:40px 24px;text-align:center;cursor:pointer;
+transition:all .2s;position:relative;
+background:#111;
 }
 #quick-drop:hover,#quick-drop.over{
-  border-color:#00ff88;background:rgba(0,255,136,.04);
+border-color:#00ff88;background:rgba(0,255,136,.04);
 }
 #quick-drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 #quick-drop.over *{pointer-events:none}
@@ -127,8 +128,8 @@ textarea.inp{resize:none}
 /* Queued file chips */
 #queued-files{display:none;flex-direction:column;gap:8px;width:100%;max-width:480px}
 #queued-files .qf-item{
-  background:#111;border:1px solid #1e1e1e;border-radius:6px;
-  padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
+background:#111;border:1px solid #1e1e1e;border-radius:6px;
+padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
 }
 #queued-files .qf-icon{font-size:18px}
 #queued-files .qf-name{flex:1;min-width:0;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -158,13 +159,20 @@ textarea.inp{resize:none}
 .me .bubble{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.18);color:#e8e8e8}
 .them .bubble{background:#161616;border:1px solid #1e1e1e;color:#e8e8e8}
 .sys .bubble{background:transparent;border:none;color:#2a2a2a;font-size:11px}
+.log-line{align-self:stretch;font-size:10px;color:#2a2a2a;font-family:ui-monospace,Menlo,Consolas,monospace;
+padding:1px 0;line-height:1.7;white-space:pre}
+.log-line .log-t{color:#1e1e1e;margin-right:6px}
+.log-line .log-ok{color:#00ff88}
+.log-line .log-warn{color:#ffaa00}
+.log-line .log-err{color:#ff4444}
+.log-line .log-dim{color:#2a2a2a}
 .ts{font-size:10px;color:#222;margin-top:2px;padding:0 3px}
 
 /* Accept/decline notification bubble */
 .fi-request{
-  align-self:flex-start;width:min(340px,90%);
-  background:#161616;border:1px solid #252525;border-radius:8px;
-  padding:12px 14px;animation:mIn .15s ease;
+align-self:flex-start;width:min(340px,90%);
+background:#161616;border:1px solid #252525;border-radius:8px;
+padding:12px 14px;animation:mIn .15s ease;
 }
 .fi-req-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .fi-req-icon{font-size:22px;flex-shrink:0}
@@ -174,26 +182,26 @@ textarea.inp{resize:none}
 .fi-req-btns .btn{flex:1;font-size:12px;padding:8px}
 
 #ci-bar{
-  border-top:1px solid #161616;padding:10px 12px;
-  padding-bottom:max(10px,var(--safe-b));
-  display:flex;gap:8px;align-items:flex-end;
-  background:#111;flex-shrink:0;
+border-top:1px solid #161616;padding:10px 12px;
+padding-bottom:max(10px,var(–safe-b));
+display:flex;gap:8px;align-items:flex-end;
+background:#111;flex-shrink:0;
 }
 #ci{flex:1;resize:none;min-height:38px;max-height:120px;overflow-y:auto;line-height:1.45;font-size:16px;padding:9px 11px;}
 #ci-file{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
 
 /* MOBILE SIDEBAR TOGGLE */
 #sb-toggle{display:flex;padding:6px 10px;font-size:16px;background:transparent;
-  border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
-  align-items:center;-webkit-tap-highlight-color:transparent}
+border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
+align-items:center;-webkit-tap-highlight-color:transparent}
 #sb-toggle:hover{color:#00ff88;border-color:#00ff88}
 
 /* MODALS */
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:flex-end;justify-content:center;padding:0}
 .ov.open{display:flex}
 .modal{background:#111;border:1px solid #222;border-radius:14px 14px 0 0;padding:24px;width:100%;max-width:480px;
-  box-shadow:0 -8px 40px rgba(0,0,0,.6);max-height:92dvh;overflow-y:auto;
-  padding-bottom:max(24px,var(--safe-b))}
+box-shadow:0 -8px 40px rgba(0,0,0,.6);max-height:92dvh;overflow-y:auto;
+padding-bottom:max(24px,var(–safe-b))}
 @media(min-width:540px){.ov{align-items:center;padding:16px}.modal{border-radius:10px;max-height:88dvh}}
 .modal-title{font-size:16px;font-weight:700;color:#e8e8e8;margin-bottom:6px}
 .modal-sub{font-size:12px;color:#444;margin-bottom:18px;line-height:1.6}
@@ -204,22 +212,22 @@ textarea.inp{resize:none}
 hr.div{border:none;border-top:1px solid #161616;margin:14px 0}
 
 /* TOAST */
-#toast{position:fixed;bottom:max(20px,var(--safe-b));left:50%;transform:translateX(-50%) translateY(12px);
-  background:#161616;border:1px solid #222;color:#ccc;padding:10px 18px;border-radius:20px;
-  font-size:12px;z-index:200;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
-  box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#toast{position:fixed;bottom:max(20px,var(–safe-b));left:50%;transform:translateX(-50%) translateY(12px);
+background:#161616;border:1px solid #222;color:#ccc;padding:10px 18px;border-radius:20px;
+font-size:12px;z-index:200;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
+box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:rgba(0,255,136,.35);color:#00ff88}
 #toast.er{border-color:rgba(255,68,68,.35);color:#ff6666}
 
 /* MOBILE */
 @media(max-width:600px){
-  main{flex-direction:column}
-  #sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
-  #sidebar.expanded{max-height:60dvh}
-  #sidebar.hidden{display:none}
-  .btn{min-height:44px}
-  .splash-steps{grid-template-columns:1fr}
+main{flex-direction:column}
+#sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
+#sidebar.expanded{max-height:60dvh}
+#sidebar.hidden{display:none}
+.btn{min-height:44px}
+.splash-steps{grid-template-columns:1fr}
 }
 
 /* PEERS LIST */
@@ -246,18 +254,19 @@ hr.div{border:none;border-top:1px solid #161616;margin:14px 0}
 body.req-mode #manual-connect,
 body.req-mode #manual-connect + div,
 body.req-mode .splash-steps{display:none!important}
-body.req-mode #quick-drop .qd-title::after{content:' — file requested'}
+body.req-mode #quick-drop .qd-title::after{content:’ — file requested’}
 body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 
 /* ROOM indicator in header */
 #room-pill{display:none;align-items:center;gap:6px;font-size:11px;color:#00ff88;
-  background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);
-  padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
+background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);
+padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
 #room-pill:hover{background:rgba(0,255,136,.12)}
 
 /* REQUEST FILE button in splash */
 #req-file-btn{margin-top:-8px}
 </style>
+
 </head>
 <body>
 <div id="app">
@@ -291,117 +300,121 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
         </div>
       </div>
 
-      <!-- Peers list (shown when ≥1 connected) -->
-      <div class="sec" id="peers-sec" style="display:none">
-        <div class="sec-lbl">Peers</div>
-        <div id="peers-list"></div>
-        <button class="btn full" style="margin-top:8px;font-size:11px" onclick="addPeer()">⊕ Add Peer</button>
-      </div>
+```
+  <!-- Peers list (shown when ≥1 connected) -->
+  <div class="sec" id="peers-sec" style="display:none">
+    <div class="sec-lbl">Peers</div>
+    <div id="peers-list"></div>
+    <button class="btn full" style="margin-top:8px;font-size:11px" onclick="addPeer()">⊕ Add Peer</button>
+  </div>
 
-      <div class="sec" id="share-sec">
-        <div class="sec-lbl">Share page with peer</div>
-        <div style="display:flex;flex-direction:column;align-items:center">
-          <div id="qr-wrap"></div>
-          <div class="qr-caption">scan to open on peer's device</div>
-          <div class="copy-row">
-            <div class="copy-val" id="page-url-el" onclick="copyPageUrl()">—</div>
-            <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyPageUrl()">copy</button>
-          </div>
-        </div>
+  <div class="sec" id="share-sec">
+    <div class="sec-lbl">Share page with peer</div>
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div id="qr-wrap"></div>
+      <div class="qr-caption">scan to open on peer's device</div>
+      <div class="copy-row">
+        <div class="copy-val" id="page-url-el" onclick="copyPageUrl()">—</div>
+        <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyPageUrl()">copy</button>
       </div>
+    </div>
+  </div>
 
-      <div class="sec" id="drop-sec">
-        <div class="sec-lbl">Send Files</div>
-        <div style="margin-bottom:8px;display:none" id="peer-target-wrap">
-          <div class="sec-lbl" style="margin-bottom:4px">To</div>
-          <select class="inp" id="peer-target" style="font-size:12px;padding:6px 8px;cursor:pointer">
-            <option value="all">Everyone</option>
-          </select>
-        </div>
-        <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
-          <input type="file" multiple onchange="dzPick(event)">
-          <div style="font-size:20px;margin-bottom:4px">⊞</div>
-          drop files or folders · tap to pick
-        </div>
-        <input type="file" id="dz-folder" webkitdirectory multiple style="display:none" onchange="dzFolderPick(event)">
-        <button class="btn full" style="margin-top:6px;font-size:11px" onclick="document.getElementById('dz-folder').click()">📁 Send Folder</button>
-      </div>
+  <div class="sec" id="drop-sec">
+    <div class="sec-lbl">Send Files</div>
+    <div style="margin-bottom:8px;display:none" id="peer-target-wrap">
+      <div class="sec-lbl" style="margin-bottom:4px">To</div>
+      <select class="inp" id="peer-target" style="font-size:12px;padding:6px 8px;cursor:pointer">
+        <option value="all">Everyone</option>
+      </select>
+    </div>
+    <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
+      <input type="file" multiple onchange="dzPick(event)">
+      <div style="font-size:20px;margin-bottom:4px">⊞</div>
+      drop files or folders · tap to pick
+    </div>
+    <input type="file" id="dz-folder" webkitdirectory multiple style="display:none" onchange="dzFolderPick(event)">
+    <button class="btn full" style="margin-top:6px;font-size:11px" onclick="document.getElementById('dz-folder').click()">📁 Send Folder</button>
+  </div>
 
-      <div class="sec" id="files-sec" style="flex:1">
-        <div class="sec-lbl">Files</div>
-        <div id="flist"><div class="empty">no files yet</div></div>
+  <div class="sec" id="files-sec" style="flex:1">
+    <div class="sec-lbl">Files</div>
+    <div id="flist"><div class="empty">no files yet</div></div>
+  </div>
+</div>
+
+<div id="content">
+  <!-- SPLASH with quick-send drop zone -->
+  <div id="splash">
+
+    <!-- Big drag-drop / send area -->
+    <div id="quick-drop"
+      ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
+      <input type="file" multiple id="qd-input" onchange="qdPick(event)">
+      <input type="file" id="qd-folder" webkitdirectory multiple style="display:none" onchange="qdFolderPick(event)">
+      <span class="qd-icon">📤</span>
+      <div class="qd-title">Drop files or folders to send</div>
+      <div class="qd-sub">Files will be queued and sent once your peer connects</div>
+      <div style="display:flex;gap:8px;pointer-events:auto;position:relative;z-index:1">
+        <button class="btn primary" onclick="qdBrowse(event)">Choose Files</button>
+        <button class="btn" onclick="qdFolderBrowse(event)">📁 Folder</button>
       </div>
     </div>
 
-    <div id="content">
-      <!-- SPLASH with quick-send drop zone -->
-      <div id="splash">
+    <!-- Request a File button -->
+    <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
 
-        <!-- Big drag-drop / send area -->
-        <div id="quick-drop"
-          ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
-          <input type="file" multiple id="qd-input" onchange="qdPick(event)">
-          <input type="file" id="qd-folder" webkitdirectory multiple style="display:none" onchange="qdFolderPick(event)">
-          <span class="qd-icon">📤</span>
-          <div class="qd-title">Drop files or folders to send</div>
-          <div class="qd-sub">Files will be queued and sent once your peer connects</div>
-          <div style="display:flex;gap:8px;pointer-events:auto;position:relative;z-index:1">
-            <button class="btn primary" onclick="qdBrowse(event)">Choose Files</button>
-            <button class="btn" onclick="qdFolderBrowse(event)">📁 Folder</button>
-          </div>
-        </div>
-
-        <!-- Request a File button -->
-        <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
-
-        <!-- Manual connect strip below the drop zone -->
-        <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
-          <div style="flex:1;height:1px;background:#1a1a1a"></div>
-          <span style="font-size:10px;color:#2a2a2a;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
-          <div style="flex:1;height:1px;background:#1a1a1a"></div>
-        </div>
-        <div style="display:flex;gap:8px;width:100%;max-width:480px">
-          <button class="btn full" onclick="startHost()">⊕ Create Session</button>
-          <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
-        </div>
-
-        <!-- Queued file list (shown once files picked pre-connection) -->
-        <div id="queued-files"></div>
-        <div id="queued-status"></div>
-
-        <!-- How it works (collapsed by default on small screens) -->
-        <div class="splash-steps">
-          <div class="step"><div class="step-n">01</div><div class="step-title">Drop or pick files</div><div class="step-desc">Drop files above to auto-create a session and queue them for sending.</div></div>
-          <div class="step"><div class="step-n">02</div><div class="step-title">Share offer code</div><div class="step-desc">Send the offer code to your peer via any channel.</div></div>
-          <div class="step"><div class="step-n">03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste the code and accept incoming files.</div></div>
-          <div class="step"><div class="step-n">04</div><div class="step-title">Connected</div><div class="step-desc">Files transfer directly — nothing touches a server.</div></div>
-        </div>
-      </div>
-
-      <!-- CHAT (post-connection) -->
-      <div id="chat">
-        <div id="msgs"></div>
-        <div id="ci-bar">
-          <input type="file" id="ci-file" multiple onchange="ciFilePick(event)">
-          <input type="file" id="ci-folder" webkitdirectory multiple style="display:none" onchange="ciFolderPick(event)">
-          <div style="position:relative">
-            <button class="btn" id="attach-btn" style="padding:8px 10px;background:transparent;border-color:#1e1e1e;font-size:17px"
-              onclick="toggleAttachMenu(event)" title="Attach">📎</button>
-            <div id="attach-menu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#111;border:1px solid #1e1e1e;border-radius:6px;overflow:hidden;white-space:nowrap;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.6)">
-              <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFiles()">📄 Files</button>
-              <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFolder()">📁 Folder</button>
-            </div>
-          </div>
-          <textarea class="inp" id="ci" placeholder="Message…" rows="1"
-            onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
-          <button class="btn primary" style="padding:8px 12px" onclick="sendChat()">↑</button>
-        </div>
-      </div>
+    <!-- Manual connect strip below the drop zone -->
+    <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
+      <div style="flex:1;height:1px;background:#1a1a1a"></div>
+      <span style="font-size:10px;color:#2a2a2a;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
+      <div style="flex:1;height:1px;background:#1a1a1a"></div>
     </div>
+    <div style="display:flex;gap:8px;width:100%;max-width:480px">
+      <button class="btn full" onclick="startHost()">⊕ Create Session</button>
+      <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
+    </div>
+
+    <!-- Queued file list (shown once files picked pre-connection) -->
+    <div id="queued-files"></div>
+    <div id="queued-status"></div>
+
+    <!-- How it works (collapsed by default on small screens) -->
+    <div class="splash-steps">
+      <div class="step"><div class="step-n">01</div><div class="step-title">Drop or pick files</div><div class="step-desc">Drop files above to auto-create a session and queue them for sending.</div></div>
+      <div class="step"><div class="step-n">02</div><div class="step-title">Share offer code</div><div class="step-desc">Send the offer code to your peer via any channel.</div></div>
+      <div class="step"><div class="step-n">03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste the code and accept incoming files.</div></div>
+      <div class="step"><div class="step-n">04</div><div class="step-title">Connected</div><div class="step-desc">Files transfer directly — nothing touches a server.</div></div>
+    </div>
+  </div>
+
+  <!-- CHAT (post-connection) -->
+  <div id="chat">
+    <div id="msgs"></div>
+    <div id="ci-bar">
+      <input type="file" id="ci-file" multiple onchange="ciFilePick(event)">
+      <input type="file" id="ci-folder" webkitdirectory multiple style="display:none" onchange="ciFolderPick(event)">
+      <div style="position:relative">
+        <button class="btn" id="attach-btn" style="padding:8px 10px;background:transparent;border-color:#1e1e1e;font-size:17px"
+          onclick="toggleAttachMenu(event)" title="Attach">📎</button>
+        <div id="attach-menu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#111;border:1px solid #1e1e1e;border-radius:6px;overflow:hidden;white-space:nowrap;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.6)">
+          <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFiles()">📄 Files</button>
+          <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFolder()">📁 Folder</button>
+        </div>
+      </div>
+      <textarea class="inp" id="ci" placeholder="Message…" rows="1"
+        onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
+      <button class="btn primary" style="padding:8px 12px" onclick="sendChat()">↑</button>
+    </div>
+  </div>
+</div>
+```
+
   </main>
 </div>
 
 <!-- MODALS -->
+
 <div class="ov" id="name-ov">
   <div class="modal" style="max-width:320px">
     <div class="modal-title">Your Name</div>
@@ -421,10 +434,10 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 <div class="ov" id="join-ov">
   <div class="modal">
     <div class="modal-title">Join Session</div>
-    <div class="modal-sub">Paste the <strong>offer code</strong> from the host.</div>
+    <div class="modal-sub">Enter a <strong>6-letter room code</strong> or paste a full offer code.</div>
     <div class="modal-field">
-      <div class="modal-lbl">Offer Code</div>
-      <textarea class="inp" id="join-inp" rows="5" placeholder="paste offer code here…"></textarea>
+      <div class="modal-lbl">Room Code or Offer</div>
+      <textarea class="inp" id="join-inp" rows="3" placeholder="e.g. ABCDEF or paste offer code…" style="text-transform:uppercase;letter-spacing:.08em"></textarea>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closeOv('join-ov')">Cancel</button>
@@ -442,41 +455,44 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
       <button class="btn" id="tab-sdp" onclick="switchTab('sdp')" style="flex:1;border:none;border-radius:0">🔑 Manual SDP</button>
     </div>
 
-    <!-- WS tab: room-based, auto-connects via WebSocket relay -->
-    <div id="tab-ws-body">
-      <div class="modal-sub">Share this link — your peer opens it and connects automatically.</div>
-      <div class="modal-field">
-        <div class="modal-lbl">Room Link</div>
-        <div class="copy-row">
-          <div class="copy-val" id="room-link-el" onclick="this.select?.()" style="color:#00ff88">—</div>
-          <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyRoomLink()">copy</button>
-        </div>
-      </div>
-      <div style="text-align:center;margin:10px 0">
-        <div id="room-qr-wrap" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;line-height:0"></div>
-      </div>
-      <div style="font-size:11px;color:#333;text-align:center" id="ws-status-lbl">Waiting for peer to open the link…</div>
+```
+<!-- WS tab: room-based, auto-connects via WebSocket relay -->
+<div id="tab-ws-body">
+  <div class="modal-sub">Share this link — your peer opens it and connects automatically.</div>
+  <div class="modal-field">
+    <div class="modal-lbl">Room Link</div>
+    <div class="copy-row">
+      <div class="copy-val" id="room-link-el" onclick="this.select?.()" style="color:#00ff88">—</div>
+      <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyRoomLink()">copy</button>
     </div>
+  </div>
+  <div style="text-align:center;margin:10px 0">
+    <div id="room-qr-wrap" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;line-height:0"></div>
+  </div>
+  <div style="font-size:11px;color:#333;text-align:center" id="ws-status-lbl">Waiting for peer to open the link…</div>
+</div>
 
-    <!-- SDP tab: manual offer/answer (no relay required) -->
-    <div id="tab-sdp-body" style="display:none">
-      <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
-      <div class="modal-field">
-        <div class="modal-lbl">Your Offer Code</div>
-        <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
-        <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
-      </div>
-      <hr class="div">
-      <div class="modal-field" style="margin-bottom:0">
-        <div class="modal-lbl">Paste Answer Code from peer</div>
-        <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
-      </div>
-    </div>
+<!-- SDP tab: manual offer/answer (no relay required) -->
+<div id="tab-sdp-body" style="display:none">
+  <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
+  <div class="modal-field">
+    <div class="modal-lbl">Your Offer Code</div>
+    <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
+    <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
+  </div>
+  <hr class="div">
+  <div class="modal-field" style="margin-bottom:0">
+    <div class="modal-lbl">Paste Answer Code from peer</div>
+    <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
+  </div>
+</div>
 
-    <div class="modal-foot">
-      <button class="btn" onclick="cancelHost()">Cancel</button>
-      <button class="btn primary" id="ans-btn" onclick="applyAnswer()" style="display:none">Complete →</button>
-    </div>
+<div class="modal-foot">
+  <button class="btn" onclick="cancelHost()">Cancel</button>
+  <button class="btn primary" id="ans-btn" onclick="applyAnswer()" style="display:none">Complete →</button>
+</div>
+```
+
   </div>
 </div>
 
@@ -496,6 +512,7 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 </div>
 
 <!-- Request-file modal: shown when ?req=ROOM -->
+
 <div class="ov" id="req-ov">
   <div class="modal">
     <div class="modal-title">📥 File Requested</div>
@@ -513,6 +530,7 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 <div id="toast"></div>
 
 <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
 //  RELAY — serverless mesh P2P
@@ -653,14 +671,13 @@ function randomRoomId(){
     joinAblyRoom(REQ_ROOM);
 
   } else if(room){
-    // Room in URL — auto-join silently
+    // Room in URL — go straight to chat view and log progress
+    showChatUI();
+    addLog('joining room '+room.toUpperCase()+'…');
     joinAblyRoom(room.toUpperCase());
 
   } else {
-    // No room — auto-create one and put it in the URL so it's shareable immediately
-    currentRoom=randomRoomId();
-    history.replaceState(null,'','?room='+currentRoom);
-    joinAblyRoom(currentRoom);
+    // No room — stay on splash, let user choose Create or Join
   }
 })();
 
@@ -669,6 +686,71 @@ function setStatus(t,c){
   document.getElementById('st').textContent=t;
   document.getElementById('dot').className='dot'+(c?' '+c:'');
 }
+
+// ── CLI-style connection log ──────────────────────────────────────
+function addLog(text, level){
+  // Only show logs while chat is visible
+  var chat=document.getElementById('chat');
+  if(chat.style.display==='none') return;
+  var msgs=document.getElementById('msgs');
+  // Group into a log block — find existing or create
+  var block=document.getElementById('log-block-active');
+  if(!block){
+    block=document.createElement('div');
+    block.id='log-block-active';
+    block.style.cssText='align-self:stretch;padding:6px 2px;display:flex;flex-direction:column';
+    msgs.appendChild(block);
+  }
+  var ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  var cls=level==='ok'?'log-ok':level==='warn'?'log-warn':level==='err'?'log-err':level==='dim'?'log-dim':'';
+  var line=document.createElement('div');
+  line.className='log-line';
+  line.innerHTML='<span class="log-t">'+ts+'</span><span class="'+(cls||'')+'">'+esc(text)+'</span>';
+  block.appendChild(line);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+function sealLogBlock(){
+  var b=document.getElementById('log-block-active');
+  if(b) b.id='log-block-'+Date.now();
+}
+
+// ── iOS visual viewport fix ───────────────────────────────────────
+(function(){
+  function setVh(){
+    var h=(window.visualViewport?window.visualViewport.height:window.innerHeight);
+    document.documentElement.style.setProperty('--app-h', h+'px');
+  }
+  setVh();
+  if(window.visualViewport) window.visualViewport.addEventListener('resize', setVh);
+  window.addEventListener('resize', setVh);
+})();
+
+// ── Peer reconnection ─────────────────────────────────────────────
+// Store ablyId → reconnect timeout handle
+var _reconnectTimers = {};
+function scheduleReconnect(ablyId, name){
+  if(_reconnectTimers[ablyId]) return; // already scheduled
+  if(!ablyReady || !currentRoom) return;
+  addLog('lost connection to '+(name||ablyId)+' · will retry in 4s…', 'warn');
+  _reconnectTimers[ablyId]=setTimeout(function(){
+    delete _reconnectTimers[ablyId];
+    if(!ablyReady||!currentRoom) return;
+    if(alreadyConnectedTo(ablyId)) return; // reconnected via presence already
+    // Check if peer is still in the room
+    ablyChannel.presence.get(function(err,members){
+      if(err||!members) return;
+      var still=members.some(function(m){ return m.clientId===ablyId; });
+      if(still && !alreadyConnectedTo(ablyId)){
+        addLog('retrying connection to '+(name||ablyId)+'…');
+        ablyInitiate(ablyId);
+      }
+    });
+  }, 4000);
+}
+function cancelReconnect(ablyId){
+  if(_reconnectTimers[ablyId]){ clearTimeout(_reconnectTimers[ablyId]); delete _reconnectTimers[ablyId]; }
+}
+
 function toast(msg,cls){
   var t=document.getElementById('toast');
   t.textContent=msg; t.className='show'+(cls?' '+cls:'');
@@ -746,16 +828,27 @@ function joinAblyRoom(roomId){
     recover: function(_, cb){ cb(true); }
   });
 
-  ablyClient.connection.on('connecting', function(){ if(!anyConnected()) setStatus('connecting…','wait'); });
+  ablyClient.connection.on('connecting', function(){
+    if(!anyConnected()) setStatus('connecting…','wait');
+    addLog('connecting to relay…');
+  });
   ablyClient.connection.on('connected',function(){
     ablyReady=true;
     if(!anyConnected()) setStatus('ready','wait');
+    addLog('relay connected','ok');
     subscribeChannel(currentRoom);
   });
-  ablyClient.connection.on('disconnected',function(){ if(!anyConnected()) setStatus('reconnecting…','wait'); });
-  ablyClient.connection.on('suspended',function(){ if(!anyConnected()) setStatus('offline','err'); });
+  ablyClient.connection.on('disconnected',function(){
+    if(!anyConnected()) setStatus('reconnecting…','wait');
+    addLog('relay disconnected — retrying…','warn');
+  });
+  ablyClient.connection.on('suspended',function(){
+    if(!anyConnected()) setStatus('offline','err');
+    addLog('relay offline — check network','err');
+  });
   ablyClient.connection.on('failed',function(){
     setStatus('failed','err');
+    addLog('relay connection failed','err');
     toast('Could not connect — check your network','er');
   });
 }
@@ -805,7 +898,7 @@ function subscribeChannel(roomId){
   }, 600);
 
   updateRoomUI();
-  if(!anyConnected()) setStatus('waiting for peer…','wait');
+  if(!anyConnected()){ setStatus('waiting for peer…','wait'); addLog('joined room '+roomId+' · waiting for peer…'); }
 }
 
 // We send an SDP offer to remoteAblyId via Ably
@@ -814,6 +907,7 @@ var initiating = new Set(); // guard against duplicate ablyInitiate for same rem
 function ablyInitiate(remoteAblyId){
   if(initiating.has(remoteAblyId)) return; // already in progress
   initiating.add(remoteAblyId);
+  addLog('peer found · initiating connection…');
 
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:remoteAblyId};
@@ -1048,12 +1142,17 @@ function kickPeer(pid){
   peerGone(pid,true);
 }
 
-function peerGone(pid,keepChat){
+function peerGone(pid, keepChat){
+  var p=peers[pid];
+  var ablyId=p&&p.ablyId;
+  var name=p&&p.name;
   delete peers[pid]; renderPeers(); updateStatus();
+  if(ablyId) scheduleReconnect(ablyId, name);
   if(!anyConnected()){
     if(keepChat){
       document.getElementById('ci').disabled=true;
-      addMsg('— all peers disconnected — chat history preserved —');
+      addLog('all peers disconnected · waiting to reconnect…', 'warn');
+      addMsg('— disconnected — reconnecting if peer returns —');
     } else {
       goIdle();
     }
@@ -1069,16 +1168,21 @@ function makePC(pid){
       peers[pid]._connected=true; finishConnect(pid);
     } else if(s==='checking'&&!anyConnected()){
       setStatus('connecting…','wait');
+      addLog('ICE checking…','dim');
     } else if(s==='failed'){
       // If DC is already open the connection is fine despite ICE reporting failure
       var p=peers[pid]; if(!p) return;
       if(p.dc&&p.dc.readyState==='open') return;
       console.warn('[RELAY] ICE failed for',pid,'— no TURN server available');
+      addLog('ICE failed for '+peerDisplayName(pid),'err');
       toast(peerDisplayName(pid)+' could not connect (ICE failed)','er');
       peerGone(pid,true);
     } else if((s==='disconnected'||s==='closed')&&peers[pid]){
       var p2=peers[pid]; if(!p2) return;
-      if(p2._connected) addMsg('✕ '+p2.name+' left');
+      if(p2._connected){
+        addLog('connection to '+(p2.name||'peer')+' interrupted','warn');
+        addMsg('✕ '+p2.name+' left');
+      }
       peerGone(pid,true);
     }
   };
@@ -1119,12 +1223,15 @@ function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 function finishConnect(pid){
   var p=peers[pid]; if(!p) return;
   if(p._onConnect){ p._onConnect(); delete p._onConnect; }
+  if(p.ablyId) cancelReconnect(p.ablyId);
+  sealLogBlock();
   removeInlineShareCard();
   introNewPeerMesh(pid);
   if(document.getElementById('splash').style.display!=='none') showChatUI();
   document.getElementById('ci').disabled=false;
   renderPeers(); updateStatus();
   var dn=peerDisplayName(pid);
+  addLog('connected to '+dn,'ok');
   showBanner('⚡ '+dn+' joined');
   addMsg('⚡ '+dn+' joined');
   setTimeout(function(){ flushQueue(pid); },300);
@@ -1688,6 +1795,7 @@ function goIdle(){
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=false; });
   setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={};
+  Object.keys(_reconnectTimers).forEach(function(id){ clearTimeout(_reconnectTimers[id]); }); _reconnectTimers={};
 }
 
 // ── Manual SDP host ───────────────────────────────────────────────
@@ -1715,6 +1823,7 @@ function startHost(){
     document.getElementById('bd').style.display='';
     // Go straight into chat view — no overlay
     showChatUI();
+    addLog('creating session · room '+currentRoom+'…');
     showInlineShareCard(currentRoom);
     return;  // Ably handles connection — no SDP needed
   }
@@ -1787,8 +1896,20 @@ function applyAnswer(){
 // ── Manual SDP joiner ─────────────────────────────────────────────
 function doJoin(){
   var raw=document.getElementById('join-inp').value.trim();
-  if(!raw){ toast('Paste the offer code','er'); return; }
+  if(!raw){ toast('Paste the room code or offer code','er'); return; }
   closeOv('join-ov');
+
+  // If it looks like a 6-char room code (Ably) — join that room
+  if(AUTH_URL && /^[A-Z0-9]{6}$/i.test(raw)){
+    var room=raw.toUpperCase();
+    history.replaceState(null,'','?room='+room);
+    showChatUI();
+    addLog('joining room '+room+'…');
+    joinAblyRoom(room);
+    return;
+  }
+
+  // SDP manual path
   document.querySelectorAll('#manual-connect ~ div .btn').forEach(function(b){ b.disabled=true; });
   setStatus('connecting…','wait');
   var offer; try{ offer=JSON.parse(b64dec(raw)); }catch(e){ toast('Could not read offer','er'); if(!anyConnected()) setStatus('idle'); return; }
@@ -1813,6 +1934,8 @@ function doJoin(){
 function copyCode(){ navigator.clipboard.writeText(document.getElementById('code-out').value).then(function(){ toast('Answer code copied','ok'); }); }
 
 function doDisconnectAll(){
+  Object.keys(_reconnectTimers).forEach(function(id){ clearTimeout(_reconnectTimers[id]); });
+  _reconnectTimers={};
   Object.keys(peers).forEach(function(pid){ try{peers[pid].pc.close();}catch(e){} });
   peers={};
   if(ablyClient){ try{ablyClient.close();}catch(e){} ablyClient=null; ablyChannel=null; ablyReady=false; }
@@ -2103,5 +2226,6 @@ function rsEnc(data,ec){
   return msg.slice(data.length);
 }
 </script>
+
 </body>
 </html>
