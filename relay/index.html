@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -16,16 +15,16 @@ html,body{
 }
 #app{ display:flex; flex-direction:column; height:100dvh; height:calc(var(--app-h,100dvh)); }
 
-/* HEADER  */
+/* HEADER */
 header{
-display:flex;align-items:center;justify-content:space-between;
-padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));
-height:48px; border-bottom:1px solid #1a1a1a; background:#111; flex-shrink:0; gap:10px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));
+  height:48px; border-bottom:1px solid #1a1a1a; background:#111; flex-shrink:0; gap:10px;
 }
 .logo{font-size:15px;font-weight:700;letter-spacing:.2em;color:#00ff88;white-space:nowrap}
 .logo-sub{font-size:10px;color:#2a2a2a;margin-left:6px;font-weight:400}
 .pill{display:flex;align-items:center;gap:6px;font-size:11px;color:#444;
-background:#191919;border:1px solid #1e1e1e;padding:3px 10px;border-radius:20px;white-space:nowrap}
+  background:#191919;border:1px solid #1e1e1e;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;background:#2a2a2a;flex-shrink:0;transition:background .3s}
 .dot.on{background:#00ff88;box-shadow:0 0 6px #00ff88;animation:pulse 2s infinite}
 .dot.wait{background:#ffaa00;animation:pulse .8s infinite}
@@ -37,8 +36,8 @@ main{display:flex;flex:1;overflow:hidden;min-height:0}
 
 /* SIDEBAR */
 #sidebar{
-width:260px;flex-shrink:0;border-right:1px solid #1a1a1a;
-display:flex;flex-direction:column;background:#111;overflow-y:auto;
+  width:260px;flex-shrink:0;border-right:1px solid #1a1a1a;
+  display:flex;flex-direction:column;background:#111;overflow-y:auto;
 }
 #sidebar::-webkit-scrollbar{width:3px}
 #sidebar::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
@@ -47,11 +46,11 @@ display:flex;flex-direction:column;background:#111;overflow-y:auto;
 
 /* BUTTONS */
 .btn{
-display:inline-flex;align-items:center;justify-content:center;gap:6px;
-padding:9px 14px;border:1px solid #252525;background:#181818;color:#bbb;
-font-family:inherit;font-size:12px;cursor:pointer;border-radius:4px;
-transition:all .15s;white-space:nowrap;min-height:40px;
--webkit-tap-highlight-color:transparent;user-select:none;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 14px;border:1px solid #252525;background:#181818;color:#bbb;
+  font-family:inherit;font-size:12px;cursor:pointer;border-radius:4px;
+  transition:all .15s;white-space:nowrap;min-height:40px;
+  -webkit-tap-highlight-color:transparent;user-select:none;
 }
 .btn:hover{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.06)}
 .btn:active{transform:scale(.97)}
@@ -64,9 +63,9 @@ transition:all .15s;white-space:nowrap;min-height:40px;
 
 /* INPUTS */
 .inp{
-width:100%;background:#141414;border:1px solid #202020;color:#e8e8e8;
-font-family:inherit;font-size:16px;padding:9px 11px;border-radius:4px;
-outline:none;transition:border-color .15s;
+  width:100%;background:#141414;border:1px solid #202020;color:#e8e8e8;
+  font-family:inherit;font-size:16px;padding:9px 11px;border-radius:4px;
+  outline:none;transition:border-color .15s;
 }
 .inp:focus{border-color:#00ff88}
 .inp::placeholder{color:#2a2a2a}
@@ -78,15 +77,15 @@ textarea.inp{resize:none}
 .qr-caption{font-size:10px;color:#333;text-align:center;margin:7px 0 5px}
 .copy-row{display:flex;gap:6px;width:100%}
 .copy-val{flex:1;min-width:0;background:#141414;border:1px solid #1e1e1e;color:#444;
-font-family:inherit;font-size:10px;padding:7px 9px;border-radius:4px;
-white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  font-family:inherit;font-size:10px;padding:7px 9px;border-radius:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .copy-val:hover{border-color:#00ff88;color:#00ff88}
 
 /* FILE SECTIONS */
 #drop-sec{display:none}
 #dz{border:1px dashed #222;border-radius:6px;padding:16px 14px;
-text-align:center;color:#333;font-size:11px;cursor:pointer;
-transition:all .15s;position:relative}
+  text-align:center;color:#333;font-size:11px;cursor:pointer;
+  transition:all .15s;position:relative}
 #dz:hover,#dz.over{border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.04)}
 #dz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 #files-sec{display:none;flex:1;min-height:0}
@@ -109,14 +108,14 @@ transition:all .15s;position:relative}
 
 /* Quick-send drop zone (shown on splash) */
 #quick-drop{
-width:100%;max-width:480px;
-border:2px dashed #222;border-radius:12px;
-padding:40px 24px;text-align:center;cursor:pointer;
-transition:all .2s;position:relative;
-background:#111;
+  width:100%;max-width:480px;
+  border:2px dashed #222;border-radius:12px;
+  padding:40px 24px;text-align:center;cursor:pointer;
+  transition:all .2s;position:relative;
+  background:#111;
 }
 #quick-drop:hover,#quick-drop.over{
-border-color:#00ff88;background:rgba(0,255,136,.04);
+  border-color:#00ff88;background:rgba(0,255,136,.04);
 }
 #quick-drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 #quick-drop.over *{pointer-events:none}
@@ -128,8 +127,8 @@ border-color:#00ff88;background:rgba(0,255,136,.04);
 /* Queued file chips */
 #queued-files{display:none;flex-direction:column;gap:8px;width:100%;max-width:480px}
 #queued-files .qf-item{
-background:#111;border:1px solid #1e1e1e;border-radius:6px;
-padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
+  background:#111;border:1px solid #1e1e1e;border-radius:6px;
+  padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
 }
 #queued-files .qf-icon{font-size:18px}
 #queued-files .qf-name{flex:1;min-width:0;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -160,7 +159,7 @@ padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;
 .them .bubble{background:#161616;border:1px solid #1e1e1e;color:#e8e8e8}
 .sys .bubble{background:transparent;border:none;color:#2a2a2a;font-size:11px}
 .log-line{align-self:stretch;font-size:10px;color:#2a2a2a;font-family:ui-monospace,Menlo,Consolas,monospace;
-padding:1px 0;line-height:1.7;white-space:pre}
+  padding:1px 0;line-height:1.7;white-space:pre}
 .log-line .log-t{color:#1e1e1e;margin-right:6px}
 .log-line .log-ok{color:#00ff88}
 .log-line .log-warn{color:#ffaa00}
@@ -170,9 +169,9 @@ padding:1px 0;line-height:1.7;white-space:pre}
 
 /* Accept/decline notification bubble */
 .fi-request{
-align-self:flex-start;width:min(340px,90%);
-background:#161616;border:1px solid #252525;border-radius:8px;
-padding:12px 14px;animation:mIn .15s ease;
+  align-self:flex-start;width:min(340px,90%);
+  background:#161616;border:1px solid #252525;border-radius:8px;
+  padding:12px 14px;animation:mIn .15s ease;
 }
 .fi-req-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .fi-req-icon{font-size:22px;flex-shrink:0}
@@ -182,26 +181,26 @@ padding:12px 14px;animation:mIn .15s ease;
 .fi-req-btns .btn{flex:1;font-size:12px;padding:8px}
 
 #ci-bar{
-border-top:1px solid #161616;padding:10px 12px;
-padding-bottom:max(10px,var(–safe-b));
-display:flex;gap:8px;align-items:flex-end;
-background:#111;flex-shrink:0;
+  border-top:1px solid #161616;padding:10px 12px;
+  padding-bottom:max(10px,var(--safe-b));
+  display:flex;gap:8px;align-items:flex-end;
+  background:#111;flex-shrink:0;
 }
 #ci{flex:1;resize:none;min-height:38px;max-height:120px;overflow-y:auto;line-height:1.45;font-size:16px;padding:9px 11px;}
 #ci-file{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
 
 /* MOBILE SIDEBAR TOGGLE */
 #sb-toggle{display:flex;padding:6px 10px;font-size:16px;background:transparent;
-border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
-align-items:center;-webkit-tap-highlight-color:transparent}
+  border:1px solid #1e1e1e;color:#444;cursor:pointer;border-radius:4px;min-height:34px;
+  align-items:center;-webkit-tap-highlight-color:transparent}
 #sb-toggle:hover{color:#00ff88;border-color:#00ff88}
 
 /* MODALS */
 .ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:flex-end;justify-content:center;padding:0}
 .ov.open{display:flex}
 .modal{background:#111;border:1px solid #222;border-radius:14px 14px 0 0;padding:24px;width:100%;max-width:480px;
-box-shadow:0 -8px 40px rgba(0,0,0,.6);max-height:92dvh;overflow-y:auto;
-padding-bottom:max(24px,var(–safe-b))}
+  box-shadow:0 -8px 40px rgba(0,0,0,.6);max-height:92dvh;overflow-y:auto;
+  padding-bottom:max(24px,var(--safe-b))}
 @media(min-width:540px){.ov{align-items:center;padding:16px}.modal{border-radius:10px;max-height:88dvh}}
 .modal-title{font-size:16px;font-weight:700;color:#e8e8e8;margin-bottom:6px}
 .modal-sub{font-size:12px;color:#444;margin-bottom:18px;line-height:1.6}
@@ -212,22 +211,22 @@ padding-bottom:max(24px,var(–safe-b))}
 hr.div{border:none;border-top:1px solid #161616;margin:14px 0}
 
 /* TOAST */
-#toast{position:fixed;bottom:max(20px,var(–safe-b));left:50%;transform:translateX(-50%) translateY(12px);
-background:#161616;border:1px solid #222;color:#ccc;padding:10px 18px;border-radius:20px;
-font-size:12px;z-index:200;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
-box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#toast{position:fixed;bottom:max(20px,var(--safe-b));left:50%;transform:translateX(-50%) translateY(12px);
+  background:#161616;border:1px solid #222;color:#ccc;padding:10px 18px;border-radius:20px;
+  font-size:12px;z-index:200;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(0,0,0,.5)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:rgba(0,255,136,.35);color:#00ff88}
 #toast.er{border-color:rgba(255,68,68,.35);color:#ff6666}
 
 /* MOBILE */
 @media(max-width:600px){
-main{flex-direction:column}
-#sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
-#sidebar.expanded{max-height:60dvh}
-#sidebar.hidden{display:none}
-.btn{min-height:44px}
-.splash-steps{grid-template-columns:1fr}
+  main{flex-direction:column}
+  #sidebar{width:100%;border-right:none;border-bottom:1px solid #1a1a1a;max-height:200px}
+  #sidebar.expanded{max-height:60dvh}
+  #sidebar.hidden{display:none}
+  .btn{min-height:44px}
+  .splash-steps{grid-template-columns:1fr}
 }
 
 /* PEERS LIST */
@@ -254,19 +253,18 @@ main{flex-direction:column}
 body.req-mode #manual-connect,
 body.req-mode #manual-connect + div,
 body.req-mode .splash-steps{display:none!important}
-body.req-mode #quick-drop .qd-title::after{content:’ — file requested’}
+body.req-mode #quick-drop .qd-title::after{content:' — file requested'}
 body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 
 /* ROOM indicator in header */
 #room-pill{display:none;align-items:center;gap:6px;font-size:11px;color:#00ff88;
-background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);
-padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
+  background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.18);
+  padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
 #room-pill:hover{background:rgba(0,255,136,.12)}
 
 /* REQUEST FILE button in splash */
 #req-file-btn{margin-top:-8px}
 </style>
-
 </head>
 <body>
 <div id="app">
@@ -300,121 +298,117 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
         </div>
       </div>
 
-```
-  <!-- Peers list (shown when ≥1 connected) -->
-  <div class="sec" id="peers-sec" style="display:none">
-    <div class="sec-lbl">Peers</div>
-    <div id="peers-list"></div>
-    <button class="btn full" style="margin-top:8px;font-size:11px" onclick="addPeer()">⊕ Add Peer</button>
-  </div>
-
-  <div class="sec" id="share-sec">
-    <div class="sec-lbl">Share page with peer</div>
-    <div style="display:flex;flex-direction:column;align-items:center">
-      <div id="qr-wrap"></div>
-      <div class="qr-caption">scan to open on peer's device</div>
-      <div class="copy-row">
-        <div class="copy-val" id="page-url-el" onclick="copyPageUrl()">—</div>
-        <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyPageUrl()">copy</button>
+      <!-- Peers list (shown when ≥1 connected) -->
+      <div class="sec" id="peers-sec" style="display:none">
+        <div class="sec-lbl">Peers</div>
+        <div id="peers-list"></div>
+        <button class="btn full" style="margin-top:8px;font-size:11px" onclick="addPeer()">⊕ Add Peer</button>
       </div>
-    </div>
-  </div>
 
-  <div class="sec" id="drop-sec">
-    <div class="sec-lbl">Send Files</div>
-    <div style="margin-bottom:8px;display:none" id="peer-target-wrap">
-      <div class="sec-lbl" style="margin-bottom:4px">To</div>
-      <select class="inp" id="peer-target" style="font-size:12px;padding:6px 8px;cursor:pointer">
-        <option value="all">Everyone</option>
-      </select>
-    </div>
-    <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
-      <input type="file" multiple onchange="dzPick(event)">
-      <div style="font-size:20px;margin-bottom:4px">⊞</div>
-      drop files or folders · tap to pick
-    </div>
-    <input type="file" id="dz-folder" webkitdirectory multiple style="display:none" onchange="dzFolderPick(event)">
-    <button class="btn full" style="margin-top:6px;font-size:11px" onclick="document.getElementById('dz-folder').click()">📁 Send Folder</button>
-  </div>
-
-  <div class="sec" id="files-sec" style="flex:1">
-    <div class="sec-lbl">Files</div>
-    <div id="flist"><div class="empty">no files yet</div></div>
-  </div>
-</div>
-
-<div id="content">
-  <!-- SPLASH with quick-send drop zone -->
-  <div id="splash">
-
-    <!-- Big drag-drop / send area -->
-    <div id="quick-drop"
-      ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
-      <input type="file" multiple id="qd-input" onchange="qdPick(event)">
-      <input type="file" id="qd-folder" webkitdirectory multiple style="display:none" onchange="qdFolderPick(event)">
-      <span class="qd-icon">📤</span>
-      <div class="qd-title">Drop files or folders to send</div>
-      <div class="qd-sub">Files will be queued and sent once your peer connects</div>
-      <div style="display:flex;gap:8px;pointer-events:auto;position:relative;z-index:1">
-        <button class="btn primary" onclick="qdBrowse(event)">Choose Files</button>
-        <button class="btn" onclick="qdFolderBrowse(event)">📁 Folder</button>
-      </div>
-    </div>
-
-    <!-- Request a File button -->
-    <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
-
-    <!-- Manual connect strip below the drop zone -->
-    <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
-      <div style="flex:1;height:1px;background:#1a1a1a"></div>
-      <span style="font-size:10px;color:#2a2a2a;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
-      <div style="flex:1;height:1px;background:#1a1a1a"></div>
-    </div>
-    <div style="display:flex;gap:8px;width:100%;max-width:480px">
-      <button class="btn full" onclick="startHost()">⊕ Create Session</button>
-      <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
-    </div>
-
-    <!-- Queued file list (shown once files picked pre-connection) -->
-    <div id="queued-files"></div>
-    <div id="queued-status"></div>
-
-    <!-- How it works (collapsed by default on small screens) -->
-    <div class="splash-steps">
-      <div class="step"><div class="step-n">01</div><div class="step-title">Drop or pick files</div><div class="step-desc">Drop files above to auto-create a session and queue them for sending.</div></div>
-      <div class="step"><div class="step-n">02</div><div class="step-title">Share offer code</div><div class="step-desc">Send the offer code to your peer via any channel.</div></div>
-      <div class="step"><div class="step-n">03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste the code and accept incoming files.</div></div>
-      <div class="step"><div class="step-n">04</div><div class="step-title">Connected</div><div class="step-desc">Files transfer directly — nothing touches a server.</div></div>
-    </div>
-  </div>
-
-  <!-- CHAT (post-connection) -->
-  <div id="chat">
-    <div id="msgs"></div>
-    <div id="ci-bar">
-      <input type="file" id="ci-file" multiple onchange="ciFilePick(event)">
-      <input type="file" id="ci-folder" webkitdirectory multiple style="display:none" onchange="ciFolderPick(event)">
-      <div style="position:relative">
-        <button class="btn" id="attach-btn" style="padding:8px 10px;background:transparent;border-color:#1e1e1e;font-size:17px"
-          onclick="toggleAttachMenu(event)" title="Attach">📎</button>
-        <div id="attach-menu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#111;border:1px solid #1e1e1e;border-radius:6px;overflow:hidden;white-space:nowrap;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.6)">
-          <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFiles()">📄 Files</button>
-          <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFolder()">📁 Folder</button>
+      <div class="sec" id="share-sec">
+        <div class="sec-lbl">Share page with peer</div>
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div id="qr-wrap"></div>
+          <div class="qr-caption">scan to open on peer's device</div>
+          <div class="copy-row">
+            <div class="copy-val" id="page-url-el" onclick="copyPageUrl()">—</div>
+            <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyPageUrl()">copy</button>
+          </div>
         </div>
       </div>
-      <textarea class="inp" id="ci" placeholder="Message…" rows="1"
-        onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
-      <button class="btn primary" style="padding:8px 12px" onclick="sendChat()">↑</button>
-    </div>
-  </div>
-</div>
-```
 
+      <div class="sec" id="drop-sec">
+        <div class="sec-lbl">Send Files</div>
+        <div style="margin-bottom:8px;display:none" id="peer-target-wrap">
+          <div class="sec-lbl" style="margin-bottom:4px">To</div>
+          <select class="inp" id="peer-target" style="font-size:12px;padding:6px 8px;cursor:pointer">
+            <option value="all">Everyone</option>
+          </select>
+        </div>
+        <div id="dz" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
+          <input type="file" multiple onchange="dzPick(event)">
+          <div style="font-size:20px;margin-bottom:4px">⊞</div>
+          drop files or folders · tap to pick
+        </div>
+        <input type="file" id="dz-folder" webkitdirectory multiple style="display:none" onchange="dzFolderPick(event)">
+        <button class="btn full" style="margin-top:6px;font-size:11px" onclick="document.getElementById('dz-folder').click()">📁 Send Folder</button>
+      </div>
+
+      <div class="sec" id="files-sec" style="flex:1">
+        <div class="sec-lbl">Files</div>
+        <div id="flist"><div class="empty">no files yet</div></div>
+      </div>
+    </div>
+
+    <div id="content">
+      <!-- SPLASH with quick-send drop zone -->
+      <div id="splash">
+
+        <!-- Big drag-drop / send area -->
+        <div id="quick-drop"
+          ondragover="qdOver(event)" ondragleave="qdOut()" ondrop="qdDrop(event)">
+          <input type="file" multiple id="qd-input" onchange="qdPick(event)">
+          <input type="file" id="qd-folder" webkitdirectory multiple style="display:none" onchange="qdFolderPick(event)">
+          <span class="qd-icon">📤</span>
+          <div class="qd-title">Drop files or folders to send</div>
+          <div class="qd-sub">Files will be queued and sent once your peer connects</div>
+          <div style="display:flex;gap:8px;pointer-events:auto;position:relative;z-index:1">
+            <button class="btn primary" onclick="qdBrowse(event)">Choose Files</button>
+            <button class="btn" onclick="qdFolderBrowse(event)">📁 Folder</button>
+          </div>
+        </div>
+
+        <!-- Request a File button -->
+        <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
+
+        <!-- Manual connect strip below the drop zone -->
+        <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
+          <div style="flex:1;height:1px;background:#1a1a1a"></div>
+          <span style="font-size:10px;color:#2a2a2a;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
+          <div style="flex:1;height:1px;background:#1a1a1a"></div>
+        </div>
+        <div style="display:flex;gap:8px;width:100%;max-width:480px">
+          <button class="btn full" onclick="startHost()">⊕ Create Session</button>
+          <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
+        </div>
+
+        <!-- Queued file list (shown once files picked pre-connection) -->
+        <div id="queued-files"></div>
+        <div id="queued-status"></div>
+
+        <!-- How it works (collapsed by default on small screens) -->
+        <div class="splash-steps">
+          <div class="step"><div class="step-n">01</div><div class="step-title">Drop or pick files</div><div class="step-desc">Drop files above to auto-create a session and queue them for sending.</div></div>
+          <div class="step"><div class="step-n">02</div><div class="step-title">Share offer code</div><div class="step-desc">Send the offer code to your peer via any channel.</div></div>
+          <div class="step"><div class="step-n">03</div><div class="step-title">Peer joins</div><div class="step-desc">They paste the code and accept incoming files.</div></div>
+          <div class="step"><div class="step-n">04</div><div class="step-title">Connected</div><div class="step-desc">Files transfer directly — nothing touches a server.</div></div>
+        </div>
+      </div>
+
+      <!-- CHAT (post-connection) -->
+      <div id="chat">
+        <div id="msgs"></div>
+        <div id="ci-bar">
+          <input type="file" id="ci-file" multiple onchange="ciFilePick(event)">
+          <input type="file" id="ci-folder" webkitdirectory multiple style="display:none" onchange="ciFolderPick(event)">
+          <div style="position:relative">
+            <button class="btn" id="attach-btn" style="padding:8px 10px;background:transparent;border-color:#1e1e1e;font-size:17px"
+              onclick="toggleAttachMenu(event)" title="Attach">📎</button>
+            <div id="attach-menu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#111;border:1px solid #1e1e1e;border-radius:6px;overflow:hidden;white-space:nowrap;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.6)">
+              <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFiles()">📄 Files</button>
+              <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFolder()">📁 Folder</button>
+            </div>
+          </div>
+          <textarea class="inp" id="ci" placeholder="Message…" rows="1"
+            onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
+          <button class="btn primary" style="padding:8px 12px" onclick="sendChat()">↑</button>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
 <!-- MODALS -->
-
 <div class="ov" id="name-ov">
   <div class="modal" style="max-width:320px">
     <div class="modal-title">Your Name</div>
@@ -455,44 +449,41 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
       <button class="btn" id="tab-sdp" onclick="switchTab('sdp')" style="flex:1;border:none;border-radius:0">🔑 Manual SDP</button>
     </div>
 
-```
-<!-- WS tab: room-based, auto-connects via WebSocket relay -->
-<div id="tab-ws-body">
-  <div class="modal-sub">Share this link — your peer opens it and connects automatically.</div>
-  <div class="modal-field">
-    <div class="modal-lbl">Room Link</div>
-    <div class="copy-row">
-      <div class="copy-val" id="room-link-el" onclick="this.select?.()" style="color:#00ff88">—</div>
-      <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyRoomLink()">copy</button>
+    <!-- WS tab: room-based, auto-connects via WebSocket relay -->
+    <div id="tab-ws-body">
+      <div class="modal-sub">Share this link — your peer opens it and connects automatically.</div>
+      <div class="modal-field">
+        <div class="modal-lbl">Room Link</div>
+        <div class="copy-row">
+          <div class="copy-val" id="room-link-el" onclick="this.select?.()" style="color:#00ff88">—</div>
+          <button class="btn" style="padding:7px 10px;font-size:11px;flex-shrink:0" onclick="copyRoomLink()">copy</button>
+        </div>
+      </div>
+      <div style="text-align:center;margin:10px 0">
+        <div id="room-qr-wrap" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;line-height:0"></div>
+      </div>
+      <div style="font-size:11px;color:#333;text-align:center" id="ws-status-lbl">Waiting for peer to open the link…</div>
     </div>
-  </div>
-  <div style="text-align:center;margin:10px 0">
-    <div id="room-qr-wrap" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;line-height:0"></div>
-  </div>
-  <div style="font-size:11px;color:#333;text-align:center" id="ws-status-lbl">Waiting for peer to open the link…</div>
-</div>
 
-<!-- SDP tab: manual offer/answer (no relay required) -->
-<div id="tab-sdp-body" style="display:none">
-  <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
-  <div class="modal-field">
-    <div class="modal-lbl">Your Offer Code</div>
-    <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
-    <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
-  </div>
-  <hr class="div">
-  <div class="modal-field" style="margin-bottom:0">
-    <div class="modal-lbl">Paste Answer Code from peer</div>
-    <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
-  </div>
-</div>
+    <!-- SDP tab: manual offer/answer (no relay required) -->
+    <div id="tab-sdp-body" style="display:none">
+      <div class="modal-sub">Send your <strong>offer code</strong> to your peer. Paste their <strong>answer code</strong> below once they join.</div>
+      <div class="modal-field">
+        <div class="modal-lbl">Your Offer Code</div>
+        <textarea class="inp" id="offer-out" rows="4" readonly onclick="this.select()"></textarea>
+        <button class="btn full" style="margin-top:6px" onclick="copyOffer()">⎘ Copy Offer Code</button>
+      </div>
+      <hr class="div">
+      <div class="modal-field" style="margin-bottom:0">
+        <div class="modal-lbl">Paste Answer Code from peer</div>
+        <textarea class="inp" id="ans-inp" rows="4" placeholder="paste answer code here…"></textarea>
+      </div>
+    </div>
 
-<div class="modal-foot">
-  <button class="btn" onclick="cancelHost()">Cancel</button>
-  <button class="btn primary" id="ans-btn" onclick="applyAnswer()" style="display:none">Complete →</button>
-</div>
-```
-
+    <div class="modal-foot">
+      <button class="btn" onclick="cancelHost()">Cancel</button>
+      <button class="btn primary" id="ans-btn" onclick="applyAnswer()" style="display:none">Complete →</button>
+    </div>
   </div>
 </div>
 
@@ -512,7 +503,6 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
 </div>
 
 <!-- Request-file modal: shown when ?req=ROOM -->
-
 <div class="ov" id="req-ov">
   <div class="modal">
     <div class="modal-title">📥 File Requested</div>
@@ -530,7 +520,6 @@ padding:3px 10px;border-radius:20px;white-space:nowrap;cursor:pointer}
 <div id="toast"></div>
 
 <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
-
 <script>
 // ═══════════════════════════════════════════════════════════════════
 //  RELAY — serverless mesh P2P
@@ -565,6 +554,7 @@ var pendingSend = {};  // ftid → { file, pid }
 var queuedFiles = [];
 var folderBatches = {}; // fid → { name, count, done, files:{path→Uint8Array} }
 var pendingFolderFa = {}; // fid → [{pid,id}] — fa messages that arrived before folder header
+var _folderSendTrack = {}; // fid → {name, total, sent} — sender-side progress
 
 // Ably
 var ablyClient  = null;
@@ -1298,11 +1288,12 @@ function onText(pid,raw){
 
   } else if(m.t==='fr'){
     var ps=pendingSend[m.id]; if(!ps) return;
+    var psFid=ps.fid; // capture before delete
     delete pendingSend[m.id];
     if(fdata[m.id]) fdata[m.id].dir='↑ sending';
     updateFileRowMeta(m.id);
-    startSendingFile(m.id,ps.file,ps.pid);
-    addMsg('✓ '+(p?peerDisplayName(ps.pid):'Peer')+' accepted — sending '+ps.file.name,'sys');
+    startSendingFile(m.id,ps.file,ps.pid,psFid);
+    if(!psFid) addMsg('✓ '+(p?peerDisplayName(ps.pid):'Peer')+' accepted — sending '+ps.file.name,'sys');
 
   } else if(m.t==='fd'){
     var ps2=pendingSend[m.id]; delete pendingSend[m.id];
@@ -1315,47 +1306,57 @@ function onText(pid,raw){
     transfers[m.id]={pid:pid,name:m.name,path:m.path||m.name,fid:m.fid||null,size:m.size,mime:m.mime,chunks:[],got:0,writer:null};
     fdata[m.id]={name:m.path||m.name,size:m.size,dir:'↓ receiving',pct:0};
     addFileRow(m.id);
-    addChatProgress(m.id, m.path||m.name, m.size, p?peerDisplayName(pid):null);
-    // Try to open a streaming file writer (Chrome/Edge only)
-    openStreamWriter(m.id, m.path||m.name, m.mime);
+    if(!m.fid) addChatProgress(m.id, m.path||m.name, m.size, p?peerDisplayName(pid):null);
+    // Open a streaming file writer (Chrome/Edge only; folder files handled separately)
+    if(!m.fid) openStreamWriter(m.id, m.path||m.name, m.mime);
+    else openFolderStreamWriter(m.id, m.path||m.name, m.mime);
 
   } else if(m.t==='fe'){
     var ft=transfers[m.id]; if(!ft) return;
-    fdata[m.id].pct=100; fdata[m.id].dir='↓ received';
-    if(ft.writer){
-      ft.writer.close().then(function(){
-        updateFileRow(m.id);
-        updateChatProgress(m.id,100,null,ft.path);
-        toast('✓ '+ft.name+' saved','ok');
-      }).catch(function(e){ toast('Save error: '+e.message,'er'); });
-    } else {
-      var fid2=ft.fid;
-      if(fid2&&folderBatches[fid2]){
-        var batch=folderBatches[fid2];
-        var relPath=ft.path.split('/').slice(1).join('/') || ft.name;
-        var data=new Uint8Array(concatChunks(ft.chunks,ft.got));
-        batch.files[relPath]=data;
-        batch.done++;
-        // Update progress bar but don't trigger individual download
-        updateFileRow(m.id);
-        var cpct=document.getElementById('cpct-'+m.id); if(cpct) cpct.textContent='✓';
-        var cbar=document.getElementById('cp-'+m.id); if(cbar) cbar.parentElement.style.display='none';
-        if(batch.done>=batch.count){
-          // All files in — build zip blob and show a single download button
+    var feId=m.id; var feFid=ft.fid; var fePid=pid;
+    fdata[feId].pct=100; fdata[feId].dir='↓ received';
+
+    function onFileComplete(streaming){
+      updateFileRow(feId);
+      if(!feFid) return; // single file handled below
+      var batch=folderBatches[feFid]; if(!batch) return;
+      batch.done++;
+      if(batch.done>=batch.count){
+        if(streaming){
+          // Chrome/Edge streamed directly to disk — show a "saved" card (no zip needed)
+          showFolderSavedCard(feFid, batch.name, p?peerDisplayName(fePid):null);
+        } else {
+          // Firefox/Safari — build zip and show download button
           var zipBlob=buildZipBlob(batch.name, batch.files);
-          showFolderDownloadCard(fid2, batch.name, zipBlob, p?peerDisplayName(pid):null);
-          delete folderBatches[fid2];
+          showFolderDownloadCard(feFid, batch.name, zipBlob, p?peerDisplayName(fePid):null);
         }
-      } else {
-        var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
-        fdata[m.id].blob=blob;
-        updateFileRow(m.id);
-        updateChatProgress(m.id,100,blob,ft.path);
-        if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?peerDisplayName(pid):null);
-        toast('✓ '+ft.name+' saved','ok');
+        delete folderBatches[feFid];
+        delete _rootDirHandle; // reset so next folder gets a fresh picker
+        _rootDirHandle=null;
       }
     }
-    delete transfers[m.id];
+
+    if(ft.writer){
+      // Chrome/Edge — streaming to disk; close writer then count
+      ft.writer.close().then(function(){
+        onFileComplete(true);
+      }).catch(function(e){ toast('Save error: '+e.message,'er'); });
+    } else if(feFid && folderBatches[feFid]){
+      // In-memory folder file — accumulate into batch
+      var batch2=folderBatches[feFid];
+      var relPath=ft.path.split('/').slice(1).join('/') || ft.name;
+      batch2.files[relPath]=new Uint8Array(concatChunks(ft.chunks,ft.got));
+      onFileComplete(false);
+    } else {
+      // Single file — assemble blob, show in chat with download button
+      var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
+      fdata[feId].blob=blob;
+      updateFileRow(feId);
+      updateChatProgress(feId,100,blob,ft.path);
+      if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?peerDisplayName(fePid):null);
+      toast('✓ '+ft.name+' saved','ok');
+    }
+    delete transfers[feId];
 
   } else if(m.t==='folder'){
     folderBatches[m.fid]={name:m.name,count:m.count,done:0,files:{},accepted:false,pending:[]};
@@ -1455,11 +1456,11 @@ function announceFile(file, pid, relativePath, folderBatch){
     var ftid=mkId();
     pendingSend[ftid]={file:file,pid:tpid,fid:folderBatch?folderBatch.fid:null};
     fdata[ftid]={name:displayName,size:file.size,dir:'⏳ awaiting · '+peerDisplayName(tpid),pct:0};
-    addFileRow(ftid);
+    if(!folderBatch) addFileRow(ftid);
     var msg={t:'fa',id:ftid,name:displayName,path:path,size:file.size,mime:file.type};
     if(folderBatch) msg.fid=folderBatch.fid;
     p.dc.send(JSON.stringify(msg));
-    addMsg('📤 '+peerDisplayName(tpid)+': '+displayName+' ('+fmtBytes(file.size)+')','me');
+    if(!folderBatch) addMsg('📤 '+peerDisplayName(tpid)+': '+displayName+' ('+fmtBytes(file.size)+')','me');
   });
 }
 
@@ -1471,9 +1472,14 @@ function announceFolder(files, pid){
   var rootName=(files[0].webkitRelativePath||files[0].name).split('/')[0]||'folder';
   var fid=mkId();
   var totalSize=files.reduce(function(s,f){ return s+f.size; },0);
+  _folderSendTrack[fid]={name:rootName,total:files.length,sent:0};
   targets.forEach(function(tpid){
     var p=peers[tpid]; if(!p||!p.dc||p.dc.readyState!=='open') return;
     p.dc.send(JSON.stringify({t:'folder',fid:fid,name:rootName,count:files.length,size:totalSize}));
+  });
+  // Emit one summary card on sender side
+  targets.forEach(function(tpid){
+    addFolderSentCard(fid, rootName, files.length, totalSize, tpid);
   });
   files.forEach(function(f){
     announceFile(f, pid, f.webkitRelativePath||null, {fid:fid,name:rootName});
@@ -1569,12 +1575,26 @@ function respondFile(ftid,pid,accept){
 }
 
 // ── File sending ──────────────────────────────────────────────────
-function startSendingFile(ftid,file,pid){
+// Per-peer send queue — serialises file sends so DataChannel isn't overwhelmed
+// by concurrent pump loops fighting over bufferedAmount
+function enqueueSend(pid, ftid, file, fid){
+  var p=peers[pid]; if(!p) return;
+  if(!p._sendQueue) p._sendQueue=[];
+  p._sendQueue.push({ftid:ftid,file:file,fid:fid});
+  if(!p._sending) drainSendQueue(pid);
+}
+function drainSendQueue(pid){
+  var p=peers[pid]; if(!p||!p._sendQueue||!p._sendQueue.length){ if(p) p._sending=false; return; }
+  p._sending=true;
+  var item=p._sendQueue.shift();
+  startSendingFile(item.ftid, item.file, pid, item.fid, function(){ drainSendQueue(pid); });
+}
+
+function startSendingFile(ftid,file,pid,fid,onDone){
   var p=peers[pid];
   if(!p||!p.dc||p.dc.readyState!=='open'){ toast('Peer disconnected','er'); return; }
-  var ps0=pendingSend[ftid]||{};
   var fsMsg={t:'fs',id:ftid,name:file.name,path:fdata[ftid]?fdata[ftid].name:file.name,size:file.size,mime:file.type};
-  if(ps0.fid) fsMsg.fid=ps0.fid;
+  if(fid) fsMsg.fid=fid;
   p.dc.send(JSON.stringify(fsMsg));
   var idBytes=new TextEncoder().encode((ftid+'                                    ').slice(0,36));
   var offset=0;
@@ -1588,8 +1608,19 @@ function startSendingFile(ftid,file,pid){
       p.dc.send(JSON.stringify({t:'fe',id:ftid}));
       if(fdata[ftid]){ fdata[ftid].pct=100; fdata[ftid].dir='↑ sent'; }
       updateFileRow(ftid);
-      addMsg('✓ '+file.name+' sent to '+p.name,'sys');
-      if(isImage(file.name)) addImgMsg(file,file.name,'me',null);
+      if(fid && _folderSendTrack[fid]){
+        var trk=_folderSendTrack[fid]; trk.sent++;
+        if(trk.sent>=trk.total){
+          updateFolderSentStatus(fid, '✓ '+trk.total+' files sent');
+          delete _folderSendTrack[fid];
+        } else {
+          updateFolderSentStatus(fid, 'sending '+trk.sent+' / '+trk.total+'…');
+        }
+      } else if(!fid){
+        addMsg('✓ '+file.name+' sent to '+p.name,'sys');
+        if(isImage(file.name)) addImgMsg(file,file.name,'me',null);
+      }
+      if(onDone) onDone();
       return;
     }
 
@@ -1621,40 +1652,75 @@ function startSendingFile(ftid,file,pid){
 // ── Streaming file writer (Chrome/Edge — File System Access API) ──
 var _rootDirHandle = null;
 
+// Single-file streaming: prompts user to choose save location
 async function openStreamWriter(ftid, path, mime){
   var ft=transfers[ftid]; if(!ft) return;
   if(!window.showSaveFilePicker) return; // not supported — fall back to in-memory
-  var parts=path.replace(/\\/g,'/').split('/');
-  var fileName=parts[parts.length-1];
-  var isNested=parts.length>1;
+  var fileName=path.replace(/\\/g,'/').split('/').pop();
   try{
-    if(isNested){
-      // Folder transfer — ask for destination directory once per session
-      if(!_rootDirHandle){
-        _rootDirHandle=await window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
-      }
-      if(!_rootDirHandle) return; // user cancelled — fall back to in-memory
-      var dirHandle=_rootDirHandle;
-      for(var i=0;i<parts.length-1;i++){
-        dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
-      }
-      var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
-      ft.writer=await fileHandle.createWritable();
-    } else {
-      var fh=await window.showSaveFilePicker({
-        suggestedName:fileName,
-        types:[{description:'File',accept:{[mime||'application/octet-stream']:[]}}]
-      }).catch(function(){ return null; });
-      if(!fh) return; // user cancelled
-      ft.writer=await fh.createWritable();
-    }
+    var fh=await window.showSaveFilePicker({
+      suggestedName:fileName,
+      types:[{description:'File',accept:{[mime||'application/octet-stream']:[]}}]
+    }).catch(function(){ return null; });
+    if(!fh) return; // user cancelled
+    ft.writer=await fh.createWritable();
   } catch(e){
     console.warn('[RELAY] Stream writer unavailable, using in-memory:',e.message);
     ft.writer=null;
   }
 }
 
+// Folder-file streaming: writes to shared _rootDirHandle (Chrome/Edge only)
+// Falls back silently to in-memory (for zip) if not supported or user already cancelled picker
+async function openFolderStreamWriter(ftid, path, mime){
+  var ft=transfers[ftid]; if(!ft) return;
+  if(!window.showDirectoryPicker) return; // Firefox/Safari — use in-memory zip path
+  var parts=path.replace(/\\/g,'/').split('/');
+  var fileName=parts[parts.length-1];
+  try{
+    // Ask for destination directory once for the whole folder batch
+    if(!_rootDirHandle){
+      _rootDirHandle=await window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
+    }
+    if(!_rootDirHandle) return; // user cancelled — fall back to in-memory zip
+    var dirHandle=_rootDirHandle;
+    // Create subdirectory structure (skip root folder name — that's the zip name)
+    for(var i=0;i<parts.length-1;i++){
+      dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
+    }
+    var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
+    ft.writer=await fileHandle.createWritable();
+  } catch(e){
+    console.warn('[RELAY] Folder stream writer unavailable, using in-memory:',e.message);
+    ft.writer=null;
+  }
+}
+
 function resetDirCache(){ _rootDirHandle=null; }
+
+// ── Sender-side folder summary card ──────────────────────────────
+function addFolderSentCard(fid, folderName, fileCount, totalSize, tpid){
+  var msgs=document.getElementById('msgs');
+  var el=document.createElement('div');
+  el.className='msg me'; el.id='folder-sent-'+fid;
+  el.innerHTML='<div class="bubble" style="min-width:200px;max-width:280px">'
+    +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:18px">📁</span>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(folderName)+'</div>'
+        +'<div style="font-size:10px;color:#555;margin-top:1px">'+fileCount+' files · '+fmtBytes(totalSize)+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:#2a2a2a;margin-top:8px" id="folder-sent-status-'+fid+'">sending…</div>'
+  +'</div>'
+  +'<div class="ts">'+nowTs()+'</div>';
+  msgs.appendChild(el);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+function updateFolderSentStatus(fid, text){
+  var el=document.getElementById('folder-sent-status-'+fid); if(el) el.textContent=text;
+}
+
 
 // ── Collect files from drop including folders (recursive) ─────────
 function collectDroppedItems(dataTransfer){
@@ -2138,28 +2204,58 @@ function buildZipBlob(folderName, files){
 }
 
 function showFolderDownloadCard(fid, folderName, zipBlob, fromName){
-  // Replace individual file progress cards with a single folder download card
   var msgs=document.getElementById('msgs');
   var el=document.createElement('div');
   el.className='msg them'; el.id='folder-dl-'+fid;
   var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
-  var _url=URL.createObjectURL(zipBlob);
-  el.innerHTML=lbl
-    +'<div class="bubble" style="min-width:220px">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+  var inner;
+  if(zipBlob){
+    var _url=URL.createObjectURL(zipBlob);
+    inner='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
         +'<span style="font-size:20px">📁</span>'
         +'<div style="flex:1;min-width:0">'
           +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'.zip</div>'
           +'<div style="font-size:10px;color:#555">'+fmtBytes(zipBlob.size)+' · folder</div>'
         +'</div>'
       +'</div>'
-      +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>'
-    +'</div>'
+      +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>';
+    setTimeout(function(){ URL.revokeObjectURL(_url); },300000);
+  } else {
+    // Streaming path — files already saved to chosen directory
+    inner='<div style="display:flex;align-items:center;gap:8px">'
+        +'<span style="font-size:20px">📁</span>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'</div>'
+          +'<div style="font-size:10px;color:#00ff88">✓ saved to chosen folder</div>'
+        +'</div>'
+      +'</div>';
+  }
+  el.innerHTML=lbl+'<div class="bubble" style="min-width:220px">'+inner+'</div>'
     +'<div class="ts">'+nowTs()+'</div>';
   msgs.appendChild(el);
   msgs.scrollTop=msgs.scrollHeight;
-  toast('📁 "'+folderName+'" ready — tap to save','ok');
-  setTimeout(function(){ URL.revokeObjectURL(_url); },300000); // 5 min
+  toast(zipBlob?'📁 "'+folderName+'" ready — tap to save':'📁 "'+folderName+'" saved','ok');
+}
+
+function showFolderSavedCard(fid, folderName, fromName){
+  // Chrome/Edge: files streamed directly to disk, no zip needed
+  var msgs=document.getElementById('msgs');
+  var el=document.createElement('div');
+  el.className='msg them'; el.id='folder-dl-'+fid;
+  var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
+  el.innerHTML=lbl+'<div class="bubble" style="min-width:200px">'
+    +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:20px">📁</span>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'</div>'
+        +'<div style="font-size:10px;color:#00ff88;margin-top:2px">✓ saved to chosen folder</div>'
+      +'</div>'
+    +'</div>'
+  +'</div>'
+  +'<div class="ts">'+nowTs()+'</div>';
+  msgs.appendChild(el);
+  msgs.scrollTop=msgs.scrollHeight;
+  toast('📁 "'+folderName+'" saved','ok');
 }
 
 function drawQR(container,text){
@@ -2226,6 +2322,5 @@ function rsEnc(data,ec){
   return msg.slice(data.length);
 }
 </script>
-
 </body>
 </html>
