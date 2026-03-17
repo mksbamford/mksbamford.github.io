@@ -1292,7 +1292,7 @@ function onText(pid,raw){
     delete pendingSend[m.id];
     if(fdata[m.id]) fdata[m.id].dir='↑ sending';
     updateFileRowMeta(m.id);
-    startSendingFile(m.id,ps.file,ps.pid,psFid);
+    enqueueSend(ps.pid,m.id,ps.file,psFid);
     if(!psFid) addMsg('✓ '+(p?peerDisplayName(ps.pid):'Peer')+' accepted — sending '+ps.file.name,'sys');
 
   } else if(m.t==='fd'){
@@ -1331,8 +1331,7 @@ function onText(pid,raw){
           showFolderDownloadCard(feFid, batch.name, zipBlob, p?peerDisplayName(fePid):null);
         }
         delete folderBatches[feFid];
-        delete _rootDirHandle; // reset so next folder gets a fresh picker
-        _rootDirHandle=null;
+        _rootDirHandle=null; // reset so next folder gets a fresh picker
       }
     }
 
@@ -1684,8 +1683,8 @@ async function openFolderStreamWriter(ftid, path, mime){
     }
     if(!_rootDirHandle) return; // user cancelled — fall back to in-memory zip
     var dirHandle=_rootDirHandle;
-    // Create subdirectory structure (skip root folder name — that's the zip name)
-    for(var i=0;i<parts.length-1;i++){
+    // Create subdirectory structure (skip root folder name at index 0 — user chose the destination)
+    for(var i=1;i<parts.length-1;i++){
       dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
     }
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
@@ -2208,33 +2207,22 @@ function showFolderDownloadCard(fid, folderName, zipBlob, fromName){
   var el=document.createElement('div');
   el.className='msg them'; el.id='folder-dl-'+fid;
   var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
-  var inner;
-  if(zipBlob){
-    var _url=URL.createObjectURL(zipBlob);
-    inner='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-        +'<span style="font-size:20px">📁</span>'
-        +'<div style="flex:1;min-width:0">'
-          +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'.zip</div>'
-          +'<div style="font-size:10px;color:#555">'+fmtBytes(zipBlob.size)+' · folder</div>'
-        +'</div>'
+  var _url=URL.createObjectURL(zipBlob);
+  el.innerHTML=lbl+'<div class="bubble" style="min-width:220px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+      +'<span style="font-size:20px">📁</span>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'.zip</div>'
+        +'<div style="font-size:10px;color:#555">'+fmtBytes(zipBlob.size)+' · folder</div>'
       +'</div>'
-      +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>';
-    setTimeout(function(){ URL.revokeObjectURL(_url); },300000);
-  } else {
-    // Streaming path — files already saved to chosen directory
-    inner='<div style="display:flex;align-items:center;gap:8px">'
-        +'<span style="font-size:20px">📁</span>'
-        +'<div style="flex:1;min-width:0">'
-          +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'</div>'
-          +'<div style="font-size:10px;color:#00ff88">✓ saved to chosen folder</div>'
-        +'</div>'
-      +'</div>';
-  }
-  el.innerHTML=lbl+'<div class="bubble" style="min-width:220px">'+inner+'</div>'
-    +'<div class="ts">'+nowTs()+'</div>';
+    +'</div>'
+    +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>'
+  +'</div>'
+  +'<div class="ts">'+nowTs()+'</div>';
   msgs.appendChild(el);
   msgs.scrollTop=msgs.scrollHeight;
-  toast(zipBlob?'📁 "'+folderName+'" ready — tap to save':'📁 "'+folderName+'" saved','ok');
+  setTimeout(function(){ URL.revokeObjectURL(_url); },300000);
+  toast('📁 "'+folderName+'" ready — tap to save','ok');
 }
 
 function showFolderSavedCard(fid, folderName, fromName){
