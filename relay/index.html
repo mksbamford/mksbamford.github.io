@@ -471,6 +471,7 @@ var queuedFiles = [];
 var folderBatches = {}; // fid → { name, count, done, files:{path→Uint8Array} }
 var pendingFolderFa = {}; // fid → [{pid,id}] — fa messages that arrived before folder header
 var _folderSendTrack = {}; // fid → {name, total, sent} — sender-side progress
+var _pendingCandidatesByAblyId = {}; // ablyId → [candidate] — trickle ICE candidates before peer entry
 
 // Ably
 var ablyClient  = null;
@@ -809,6 +810,11 @@ function ablyInitiate(remoteAblyId){
 
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:remoteAblyId};
+  // Absorb any candidates that arrived before this peer entry existed
+  if(_pendingCandidatesByAblyId[remoteAblyId]){
+    peers[pid]._pendingCandidates=_pendingCandidatesByAblyId[remoteAblyId];
+    delete _pendingCandidatesByAblyId[remoteAblyId];
+  }
   var pc=makePC(pid); peers[pid].pc=pc;
   var dc=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc);
 
@@ -837,7 +843,7 @@ function ablyInitiate(remoteAblyId){
 
   // Trickle ICE: send offer immediately, then send candidates as they arrive
   pc.onicecandidate=function(e){
-    if(e.candidate) ablySend(remoteAblyId,{type:'candidate',candidate:e.candidate,fromPid:pid});
+    if(e.candidate) ablySend(remoteAblyId,{type:'candidate',candidate:e.candidate});
   };
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
@@ -876,10 +882,15 @@ function onAblySignal(d){
     // Accept offer and send answer — trickle ICE
     var pid=mkId(); peerCount++;
     peers[pid]={pc:null,dc:null,name:'',uid:'',_connected:false,ablyId:d.from};
+    // Absorb any candidates that arrived before this peer entry existed
+    if(_pendingCandidatesByAblyId[d.from]){
+      peers[pid]._pendingCandidates=_pendingCandidatesByAblyId[d.from];
+      delete _pendingCandidatesByAblyId[d.from];
+    }
     var pc=makePC(pid); peers[pid].pc=pc;
     addLog('peer found · answering…');
     pc.onicecandidate=function(e){
-      if(e.candidate) ablySend(d.from,{type:'candidate',candidate:e.candidate,forPid:pid});
+      if(e.candidate) ablySend(d.from,{type:'candidate',candidate:e.candidate});
     };
     pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
       .then(function(){
@@ -910,16 +921,20 @@ function onAblySignal(d){
       .catch(function(e){ console.error('[RELAY] ablyApplyAnswer:',e); });
 
   } else if(d.type==='candidate'){
-    var pid3=d.forPid||ablyPidForId(d.from);
-    if(!pid3||!peers[pid3]||!peers[pid3].pc) return;
-    var pc3=peers[pid3].pc;
-    // Queue candidates if remote description not yet applied
-    if(!pc3.remoteDescription||!pc3.remoteDescription.type){
-      if(!peers[pid3]._pendingCandidates) peers[pid3]._pendingCandidates=[];
-      peers[pid3]._pendingCandidates.push(d.candidate);
+    var pid3=ablyPidForId(d.from);
+    if(pid3 && peers[pid3] && peers[pid3].pc){
+      var pc3=peers[pid3].pc;
+      if(!pc3.remoteDescription||!pc3.remoteDescription.type){
+        if(!peers[pid3]._pendingCandidates) peers[pid3]._pendingCandidates=[];
+        peers[pid3]._pendingCandidates.push(d.candidate);
+      } else {
+        pc3.addIceCandidate(new RTCIceCandidate(d.candidate))
+          .catch(function(e){ console.warn('[RELAY] addIceCandidate:',e.message); });
+      }
     } else {
-      pc3.addIceCandidate(new RTCIceCandidate(d.candidate))
-        .catch(function(e){ console.warn('[RELAY] addIceCandidate:',e.message); });
+      // Peer entry not yet created (candidate arrived before offer/answer) — queue by ablyId
+      if(!_pendingCandidatesByAblyId[d.from]) _pendingCandidatesByAblyId[d.from]=[];
+      _pendingCandidatesByAblyId[d.from].push(d.candidate);
     }
   }
 }
@@ -1864,8 +1879,9 @@ function goIdle(){
   document.getElementById('msgs').innerHTML='';
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
-  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={};
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={}; _pendingCandidatesByAblyId={};
   Object.keys(_reconnectTimers).forEach(function(id){ clearTimeout(_reconnectTimers[id]); }); _reconnectTimers={};
+  history.replaceState(null,'',window.location.pathname);
 }
 
 // ── Manual SDP host ───────────────────────────────────────────────
@@ -1901,6 +1917,7 @@ function doDisconnectAll(){
   if(ablyClient){ try{ablyClient.close();}catch(e){} ablyClient=null; ablyChannel=null; ablyReady=false; }
   currentRoom=null; myAblyId=null;
   document.getElementById('room-pill').style.display='none';
+  history.replaceState(null,'',window.location.pathname);
   setStatus('idle'); goIdle();
 }
 
