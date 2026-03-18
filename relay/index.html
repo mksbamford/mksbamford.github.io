@@ -1141,21 +1141,20 @@ function makePC(pid){
       }
     } else if(s==='disconnected'&&peers[pid]){
       var p2=peers[pid]; if(!p2) return;
-      // Only act if DC was actually open — ignore transient disconnected during ICE setup
       var dcOpen=p2.dc&&p2.dc.readyState==='open';
       if(!dcOpen) return;
-      addLog('connection interrupted — waiting to recover…','warn');
       clearTimeout(p2._discTimer);
       p2._discTimer=setTimeout(function(){
-        // Still disconnected after 8s — treat as gone
-        if(peers[pid]&&pc.iceConnectionState==='disconnected'){
-          if(peers[pid]._connected){
-            addLog('connection to '+(peers[pid].name||'peer')+' lost','warn');
-            addMsg('✕ '+(peers[pid].name||'peer')+' left');
-          }
+        if(!peers[pid]) return;
+        var cur=pc.iceConnectionState;
+        if(cur==='disconnected'){
+          // Still disconnected after grace period — now log and treat as gone
+          addLog('connection to '+(peers[pid].name||'peer')+' lost','warn');
+          addMsg('✕ '+(peers[pid].name||'peer')+' left');
           peerGone(pid,true);
         }
-      },8000);
+        // If cur is connected/completed/closed — recovered silently or gone via closed handler
+      }, 20000); // 20s: covers native dialog open time
     } else if(s==='closed'&&peers[pid]){
       var p2=peers[pid]; if(!p2) return;
       if(p2._connected) addMsg('✕ '+(p2.name||'peer')+' left');
@@ -1328,8 +1327,7 @@ function onText(pid,raw){
           if(streaming){
             showFolderSavedCard(feFid, batch.name, p?peerDisplayName(fePid):null);
           } else {
-            var zipBlob=buildZipBlob(batch.name, batch.files);
-            showFolderDownloadCard(feFid, batch.name, zipBlob, p?peerDisplayName(fePid):null);
+            showFolderDownloadCard(feFid, batch.name, batch.files, p?peerDisplayName(fePid):null);
           }
           delete folderBatches[feFid];
           _rootDirHandle=null; _rootDirHandlePromise=null;
@@ -1552,8 +1550,8 @@ function respondFolder(fid,pid,accept){
   if(!batch) return;
   if(accept){
     batch.accepted=true;
-    // Kick off directory picker NOW while we're inside a user gesture (the Accept tap).
-    // openFolderStreamWriter will await this promise instead of opening its own picker.
+    // Kick off directory picker NOW inside the user gesture (Accept tap).
+    // The disconnected ICE grace window (20s) covers the time the dialog is open.
     if(window.showDirectoryPicker){
       _rootDirHandlePromise=window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
     }
@@ -1694,33 +1692,31 @@ async function openStreamWriter(ftid, path, mime){
 }
 
 // Folder-file streaming: writes to shared _rootDirHandle (Chrome/Edge only).
-// The directory picker is opened by respondFolder() during the user-gesture Accept tap.
-// This function only awaits that already-in-flight promise — never opens its own picker.
+// The directory picker is opened by respondFolder() during the Accept tap (user gesture).
+// The ICE disconnected grace window (20s) covers the dialog open time.
 var _rootDirHandlePromise = null;
 async function openFolderStreamWriter(ftid, path, mime){
   var ft=transfers[ftid]; if(!ft) return;
-  if(!window.showDirectoryPicker) return; // Firefox/Safari — use in-memory zip path
-  if(!_rootDirHandlePromise) return;      // picker not started (no user gesture yet) — in-memory
+  if(!window.showDirectoryPicker) return; // Firefox/Safari — in-memory zip path
+  if(!_rootDirHandlePromise) return;      // no picker started — in-memory
   var parts=path.replace(/\\/g,'/').split('/');
   var fileName=parts[parts.length-1];
   try{
     var rootHandle=await _rootDirHandlePromise;
-    if(!rootHandle){ _rootDirHandlePromise=null; return; } // user cancelled — fall back to in-memory zip
+    if(!rootHandle){ _rootDirHandlePromise=null; return; } // cancelled — fall back to in-memory
     _rootDirHandle=rootHandle;
     var dirHandle=rootHandle;
-    // Create subdirectory structure (skip root folder name at index 0 — user chose the destination)
     for(var i=1;i<parts.length-1;i++){
       dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
     }
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
     ft.writer=await fileHandle.createWritable();
-    // Flush any chunks that arrived while awaiting the handle
-    if(ft.chunks && ft.chunks.length){
+    if(ft.chunks&&ft.chunks.length){
       for(var ci=0;ci<ft.chunks.length;ci++) await ft.writer.write(new Uint8Array(ft.chunks[ci]));
       ft.chunks=[];
     }
   } catch(e){
-    console.warn('[RELAY] Folder stream writer unavailable, using in-memory:',e.message);
+    console.warn('[RELAY] Folder stream writer unavailable:',e.message);
     ft.writer=null;
   }
 }
@@ -1889,7 +1885,7 @@ function goIdle(){
   document.getElementById('msgs').innerHTML='';
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
-  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={}; _pendingCandidatesByAblyId={};
+  setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={}; _pendingCandidatesByAblyId={}; _pendingFolderSaves={};
   Object.keys(_reconnectTimers).forEach(function(id){ clearTimeout(_reconnectTimers[id]); }); _reconnectTimers={};
   history.replaceState(null,'',window.location.pathname);
 }
@@ -2124,27 +2120,101 @@ function buildZipBlob(folderName, files){
   return new Blob(allParts,{type:'application/zip'});
 }
 
-function showFolderDownloadCard(fid, folderName, zipBlob, fromName){
+function showFolderDownloadCard(fid, folderName, files, fromName){
+  // files: { relPath → Uint8Array } — already accumulated in-memory
   var msgs=document.getElementById('msgs');
   var el=document.getElementById('freq-folder-'+fid)||document.createElement('div');
   el.className='msg them'; el.id='folder-dl-'+fid;
   var lbl=fromName?'<div class="from-lbl">'+esc(fromName)+'</div>':'';
-  var _url=URL.createObjectURL(zipBlob);
-  el.innerHTML=lbl+'<div class="bubble" style="min-width:220px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-      +'<span style="font-size:20px">📁</span>'
-      +'<div style="flex:1;min-width:0">'
-        +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'.zip</div>'
-        +'<div style="font-size:10px;color:#555">'+fmtBytes(zipBlob.size)+' · folder</div>'
-      +'</div>'
+  var totalBytes=Object.values(files).reduce(function(s,a){ return s+a.byteLength; },0);
+  var fileCount=Object.keys(files).length;
+
+  // On Chrome/Edge with File System Access API, offer native folder save (no zip)
+  // The picker is called here — after transfer — so no ICE disruption
+  var hasNativeSave=!!window.showDirectoryPicker;
+
+  var inner='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    +'<span style="font-size:20px">📁</span>'
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:12px;color:#ccc">'+esc(folderName)+'</div>'
+      +'<div style="font-size:10px;color:#555">'+fileCount+' files · '+fmtBytes(totalBytes)+'</div>'
     +'</div>'
-    +'<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save folder</a>'
-  +'</div>'
-  +'<div class="ts">'+nowTs()+'</div>';
+  +'</div>';
+
+  if(hasNativeSave){
+    // Primary: zip (instant, no dialog). Secondary: native folder save.
+    var btnId='fdbtn-'+fid;
+    inner+='<div style="display:flex;flex-direction:column;gap:6px">'
+      +'<button class="btn full" id="'+btnId+'-zip" onclick="saveFolderZip(\''+fid+'\')">↓ Save as .zip</button>'
+      +'<button class="btn" id="'+btnId+'" onclick="saveFolderNative(\''+fid+'\')" style="font-size:11px;color:#888;background:transparent;border-color:#1e1e1e">📁 Save as folder…</button>'
+    +'</div>';
+  } else {
+    // Firefox/Safari: zip only
+    var zipBlob=buildZipBlob(folderName, files);
+    var _url=URL.createObjectURL(zipBlob);
+    inner+='<a href="'+_url+'" download="'+esc(folderName)+'.zip" class="btn primary full" style="display:block;text-align:center;text-decoration:none;font-size:12px;padding:8px">↓ Save as .zip</a>';
+    setTimeout(function(){ URL.revokeObjectURL(_url); },300000);
+  }
+
+  el.innerHTML=lbl+'<div class="bubble" style="min-width:220px">'+inner+'</div>'
+    +'<div class="ts">'+nowTs()+'</div>';
   if(!el.parentNode) msgs.appendChild(el);
   msgs.scrollTop=msgs.scrollHeight;
-  setTimeout(function(){ URL.revokeObjectURL(_url); },300000);
-  toast('📁 "'+folderName+'" ready — tap to save','ok');
+
+  // Store files for deferred save buttons (Chrome path)
+  if(hasNativeSave) _pendingFolderSaves[fid]={name:folderName,files:files};
+  toast('📁 "'+folderName+'" received — ready to save','ok');
+}
+
+var _pendingFolderSaves = {}; // fid → {name, files} for deferred Chrome save
+
+async function saveFolderNative(fid){
+  var data=_pendingFolderSaves[fid]; if(!data) return;
+  var btn=document.getElementById('fdbtn-'+fid);
+  if(btn){ btn.disabled=true; btn.textContent='Picking folder…'; }
+  try{
+    var rootHandle=await window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
+    if(!rootHandle){ if(btn){ btn.disabled=false; btn.textContent='📁 Save as folder'; } return; }
+    if(btn){ btn.textContent='Saving…'; }
+    var paths=Object.keys(data.files);
+    for(var i=0;i<paths.length;i++){
+      var rel=paths[i];
+      var parts=rel.split('/');
+      var dirHandle=rootHandle;
+      for(var j=0;j<parts.length-1;j++){
+        dirHandle=await dirHandle.getDirectoryHandle(parts[j],{create:true});
+      }
+      var fh=await dirHandle.getFileHandle(parts[parts.length-1],{create:true});
+      var w=await fh.createWritable();
+      await w.write(data.files[rel]);
+      await w.close();
+    }
+    delete _pendingFolderSaves[fid];
+    var el=document.getElementById('folder-dl-'+fid);
+    if(el){
+      var bub=el.querySelector('.bubble');
+      if(bub){
+        var last=bub.lastElementChild;
+        if(last) last.remove();
+        bub.insertAdjacentHTML('beforeend','<div style="font-size:11px;color:#00ff88;margin-top:8px">✓ saved to folder</div>');
+      }
+    }
+    toast('📁 "'+data.name+'" saved','ok');
+  } catch(e){
+    console.error('[RELAY] saveFolderNative:',e);
+    if(btn){ btn.disabled=false; btn.textContent='📁 Save as folder'; }
+    toast('Save failed: '+e.message,'er');
+  }
+}
+
+function saveFolderZip(fid){
+  var data=_pendingFolderSaves[fid]; if(!data) return;
+  var zipBlob=buildZipBlob(data.name, data.files);
+  var url=URL.createObjectURL(zipBlob);
+  var a=document.createElement('a');
+  a.href=url; a.download=data.name+'.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },60000);
 }
 
 function showFolderSavedCard(fid, folderName, fromName){
