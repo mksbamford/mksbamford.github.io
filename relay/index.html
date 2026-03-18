@@ -360,15 +360,9 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
         <!-- Request a File button -->
         <button class="btn full" id="req-file-btn" style="max-width:480px" onclick="startRequestFile()">📥 Request a File</button>
 
-        <!-- Manual connect strip below the drop zone -->
-        <div id="manual-connect" style="display:flex;align-items:center;gap:12px;width:100%;max-width:480px">
-          <div style="flex:1;height:1px;background:#1a1a1a"></div>
-          <span style="font-size:10px;color:#999;white-space:nowrap;letter-spacing:.1em">OR CONNECT MANUALLY</span>
-          <div style="flex:1;height:1px;background:#1a1a1a"></div>
-        </div>
-        <div style="display:flex;gap:8px;width:100%;max-width:480px">
-          <button class="btn full" onclick="startHost()">⊕ Create Session</button>
-          <button class="btn full" onclick="openOv('join-ov')">↗ Join Session</button>
+        <!-- Session start -->
+        <div id="manual-connect" style="width:100%;max-width:480px">
+          <button class="btn full" onclick="startHost()">⊕ New Session</button>
         </div>
 
         <!-- Queued file list (shown once files picked pre-connection) -->
@@ -1481,6 +1475,11 @@ function respondFolder(fid,pid,accept){
   if(!batch) return;
   if(accept){
     batch.accepted=true;
+    // Kick off directory picker NOW while we're inside a user gesture (the Accept tap).
+    // openFolderStreamWriter will await this promise instead of opening its own picker.
+    if(window.showDirectoryPicker){
+      _rootDirHandlePromise=window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
+    }
     // Replace accept card with a live progress card
     if(card){
       card.className='msg them';
@@ -1617,21 +1616,17 @@ async function openStreamWriter(ftid, path, mime){
   }
 }
 
-// Folder-file streaming: writes to shared _rootDirHandle (Chrome/Edge only)
-// Falls back silently to in-memory (for zip) if not supported or user already cancelled picker.
-// _rootDirHandlePromise serialises concurrent calls — only one showDirectoryPicker is ever open.
+// Folder-file streaming: writes to shared _rootDirHandle (Chrome/Edge only).
+// The directory picker is opened by respondFolder() during the user-gesture Accept tap.
+// This function only awaits that already-in-flight promise — never opens its own picker.
 var _rootDirHandlePromise = null;
 async function openFolderStreamWriter(ftid, path, mime){
   var ft=transfers[ftid]; if(!ft) return;
   if(!window.showDirectoryPicker) return; // Firefox/Safari — use in-memory zip path
+  if(!_rootDirHandlePromise) return;      // picker not started (no user gesture yet) — in-memory
   var parts=path.replace(/\\/g,'/').split('/');
   var fileName=parts[parts.length-1];
   try{
-    // Ask for destination directory once for the whole folder batch.
-    // Serialise: if picker is already open, wait for its result.
-    if(!_rootDirHandlePromise){
-      _rootDirHandlePromise=window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
-    }
     var rootHandle=await _rootDirHandlePromise;
     if(!rootHandle){ _rootDirHandlePromise=null; return; } // user cancelled — fall back to in-memory zip
     _rootDirHandle=rootHandle;
@@ -1642,7 +1637,7 @@ async function openFolderStreamWriter(ftid, path, mime){
     }
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
     ft.writer=await fileHandle.createWritable();
-    // Flush any chunks that arrived while the picker was open
+    // Flush any chunks that arrived while awaiting the handle
     if(ft.chunks && ft.chunks.length){
       for(var ci=0;ci<ft.chunks.length;ci++) await ft.writer.write(new Uint8Array(ft.chunks[ci]));
       ft.chunks=[];
