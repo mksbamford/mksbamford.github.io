@@ -1297,65 +1297,64 @@ function onText(pid,raw){
     if(!m.fid){
       addChatProgress(m.id, m.path||m.name, m.size, p?peerDisplayName(pid):null);
       openStreamWriter(m.id, m.path||m.name, m.mime);
-      transfers[m.id]._writerReady=Promise.resolve();
-    } else {
-      // Attach a promise so fe handler can await writer assignment before deciding streaming vs in-memory
-      transfers[m.id]._writerReady=openFolderStreamWriter(m.id, m.path||m.name, m.mime);
+    } else if(_rootDirHandle){
+      // Chrome: _rootDirHandle already set (picker resolved before fr was sent)
+      transfers[m.id]._writerReady=openFolderFileWriter(m.id, m.path||m.name);
     }
+    // else: Firefox/Safari or cancelled picker — in-memory accumulation
 
   } else if(m.t==='fe'){
     var ft=transfers[m.id]; if(!ft) return;
     var feId=m.id; var feFid=ft.fid; var fePid=pid;
     fdata[feId].pct=100; fdata[feId].dir='↓ received';
 
-    // Wait for writer assignment (may be pending if showDirectoryPicker hasn't resolved yet)
+    function onFileComplete(){
+      updateFileRow(feId);
+      if(!feFid){ return; }
+      var batch=folderBatches[feFid]; if(!batch) return;
+      batch.done++;
+      var lbl=document.getElementById('folder-prog-lbl-'+feFid);
+      if(lbl) lbl.textContent=batch.done+' / '+batch.count+' files';
+      var fbar=document.getElementById('folder-prog-bar-'+feFid);
+      if(fbar) fbar.style.width=Math.round(batch.done/batch.count*100)+'%';
+      if(batch.done>=batch.count){
+        showFolderDownloadCard(feFid, batch.name, batch.files, p?peerDisplayName(fePid):null);
+        delete folderBatches[feFid];
+        _rootDirHandlePromise=null;
+      }
+    }
+
     var writerReady=ft._writerReady||Promise.resolve();
     writerReady.then(function(){
-      var ft2=transfers[feId]; // re-read — may have been deleted if transfer was aborted
-      if(!ft2) ft2=ft; // use captured reference if already deleted
-
-      function onFileComplete(streaming){
-        updateFileRow(feId);
-        if(!feFid) return;
-        var batch=folderBatches[feFid]; if(!batch) return;
-        batch.done++;
-        var lbl=document.getElementById('folder-prog-lbl-'+feFid);
-        if(lbl) lbl.textContent=batch.done+' / '+batch.count+' files';
-        var fbar=document.getElementById('folder-prog-bar-'+feFid);
-        if(fbar) fbar.style.width='100%'; // ensure bar fills on last file
-        if(batch.done>=batch.count){
-          if(streaming){
-            showFolderSavedCard(feFid, batch.name, p?peerDisplayName(fePid):null);
-          } else {
-            showFolderDownloadCard(feFid, batch.name, batch.files, p?peerDisplayName(fePid):null);
-          }
-          delete folderBatches[feFid];
-          _rootDirHandle=null; _rootDirHandlePromise=null;
-        }
-      }
-
-      if(ft2.writer){
-        // Write all buffered chunks sequentially then close
-        var writeAll=ft2.chunks.reduce(function(chain,c){
-          return chain.then(function(){ return ft2.writer.write(new Uint8Array(c)); });
-        }, Promise.resolve());
-        writeAll.then(function(){ return ft2.writer.close(); })
-        .then(function(){
-          onFileComplete(true);
+      if(ft.writer && feFid){
+        // Folder file streaming (Chrome) — write all buffered chunks then close
+        var w=ft.writer; var clist=ft.chunks;
+        clist.reduce(function(chain,c){
+          return chain.then(function(){ return w.write(new Uint8Array(c)); });
+        }, Promise.resolve())
+        .then(function(){ return w.close(); })
+        .then(function(){ onFileComplete(); })
+        .catch(function(e){ toast('Write error: '+e.message,'er'); onFileComplete(); });
+      } else if(ft.writer){
+        // Single-file streaming (showSaveFilePicker)
+        ft.writer.close().then(function(){
+          updateFileRow(feId);
+          toast('✓ '+ft.name+' saved','ok');
         }).catch(function(e){ toast('Save error: '+e.message,'er'); });
       } else if(feFid && folderBatches[feFid]){
+        // Folder file in-memory (Firefox/Safari or cancelled picker)
         var batch2=folderBatches[feFid];
-        var relPath=ft2.path.split('/').slice(1).join('/') || ft2.name;
-        batch2.files[relPath]=new Uint8Array(concatChunks(ft2.chunks,ft2.got));
-        onFileComplete(false);
+        var relPath=ft.path.split('/').slice(1).join('/') || ft.name;
+        batch2.files[relPath]=new Uint8Array(concatChunks(ft.chunks,ft.got));
+        onFileComplete();
       } else {
-        // Single file
-        var blob=new Blob(ft2.chunks,{type:ft2.mime||'application/octet-stream'});
+        // Single file in-memory
+        var blob=new Blob(ft.chunks,{type:ft.mime||'application/octet-stream'});
         fdata[feId].blob=blob;
         updateFileRow(feId);
-        updateChatProgress(feId,100,blob,ft2.path);
-        if(isImage(ft2.path)) addImgMsg(blob,ft2.path,'them',p?peerDisplayName(fePid):null);
-        toast('✓ '+ft2.name+' saved','ok');
+        updateChatProgress(feId,100,blob,ft.path);
+        if(isImage(ft.path)) addImgMsg(blob,ft.path,'them',p?peerDisplayName(fePid):null);
+        toast('✓ '+ft.name+' saved','ok');
       }
       delete transfers[feId];
     });
@@ -1551,32 +1550,53 @@ function respondFolder(fid,pid,accept){
   if(!batch) return;
   if(accept){
     batch.accepted=true;
-    // Kick off directory picker NOW inside the user gesture (Accept tap).
-    // The disconnected ICE grace window (20s) covers the time the dialog is open.
-    if(window.showDirectoryPicker){
-      _rootDirHandlePromise=window.showDirectoryPicker({mode:'readwrite'}).catch(function(){ return null; });
+
+    function sendFrMessages(){
+      (batch.pending||[]).forEach(function(item){
+        var pp=peers[item.pid];
+        if(pp&&pp.dc&&pp.dc.readyState==='open') pp.dc.send(JSON.stringify({t:'fr',id:item.id}));
+      });
+      batch.pending=[];
     }
-    // Replace accept card with a live progress card
-    if(card){
-      card.className='msg them';
-      card.innerHTML='<div class="bubble" style="min-width:220px">'
-        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-          +'<span style="font-size:20px">📁</span>'
-          +'<div style="flex:1;min-width:0">'
-            +'<div style="font-size:12px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(batch.name)+'</div>'
-            +'<div style="font-size:10px;color:#555" id="folder-prog-lbl-'+fid+'">0 / '+batch.count+' files</div>'
+
+    function showProgressCard(){
+      if(card){
+        card.className='msg them';
+        card.innerHTML='<div class="bubble" style="min-width:220px">'
+          +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+            +'<span style="font-size:20px">📁</span>'
+            +'<div style="flex:1;min-width:0">'
+              +'<div style="font-size:12px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(batch.name)+'</div>'
+              +'<div style="font-size:10px;color:#555" id="folder-prog-lbl-'+fid+'">0 / '+batch.count+' files</div>'
+            +'</div>'
           +'</div>'
-        +'</div>'
-        +'<div style="height:4px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
-          +'<div id="folder-prog-bar-'+fid+'" style="height:100%;background:#00ff88;border-radius:2px;width:0%;transition:width .15s"></div>'
-        +'</div>'
-      +'</div>';
+          +'<div style="height:4px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
+            +'<div id="folder-prog-bar-'+fid+'" style="height:100%;background:#00ff88;border-radius:2px;width:0%;transition:width .15s"></div>'
+          +'</div>'
+        +'</div>';
+      }
     }
-    (batch.pending||[]).forEach(function(item){
-      var pp=peers[item.pid];
-      if(pp&&pp.dc&&pp.dc.readyState==='open') pp.dc.send(JSON.stringify({t:'fr',id:item.id}));
-    });
-    batch.pending=[];
+
+    if(window.showDirectoryPicker){
+      // Chrome: show picker FIRST — fr messages only sent after folder is chosen.
+      // _rootDirHandle is guaranteed set before any fs/chunk arrives.
+      if(card) card.innerHTML='<div class="bubble" style="min-width:220px;color:#888;font-size:12px;padding:10px">📁 Choose where to save the folder…</div>';
+      window.showDirectoryPicker({mode:'readwrite'}).then(function(handle){
+        _rootDirHandle=handle;
+        showProgressCard();
+        sendFrMessages();
+      }).catch(function(){
+        // User cancelled — fall back to in-memory zip
+        _rootDirHandle=null;
+        showProgressCard();
+        sendFrMessages();
+      });
+    } else {
+      // Firefox/Safari: no picker — in-memory zip
+      showProgressCard();
+      sendFrMessages();
+    }
+
   } else {
     if(card){ card.innerHTML='<div style="font-size:11px;color:#ff4444;padding:4px 0">✕ Declined</div>'; setTimeout(function(){if(card.parentNode)card.remove();},1500); }
     (batch.pending||[]).forEach(function(item){
@@ -1702,29 +1722,24 @@ async function openStreamWriter(ftid, path, mime){
   }
 }
 
-// Folder-file streaming: writes to shared _rootDirHandle (Chrome/Edge only).
-// The directory picker is opened by respondFolder() during the Accept tap (user gesture).
-// The ICE disconnected grace window (20s) covers the dialog open time.
-var _rootDirHandlePromise = null;
-async function openFolderStreamWriter(ftid, path, mime){
-  var ft=transfers[ftid]; if(!ft) return;
-  if(!window.showDirectoryPicker) return; // Firefox/Safari — in-memory zip path
-  if(!_rootDirHandlePromise) return;      // no picker started — in-memory
+var _rootDirHandlePromise = null; // used by saveFolderNative deferred save
+
+// Open a writable for a folder file. _rootDirHandle is already set before this is called
+// (respondFolder ensures picker resolves before sending fr messages).
+async function openFolderFileWriter(ftid, path){
+  var ft=transfers[ftid]; if(!ft||!_rootDirHandle) return;
   var parts=path.replace(/\\/g,'/').split('/');
   var fileName=parts[parts.length-1];
   try{
-    var rootHandle=await _rootDirHandlePromise;
-    if(!rootHandle){ _rootDirHandlePromise=null; return; } // cancelled — fall back to in-memory
-    _rootDirHandle=rootHandle;
-    var dirHandle=rootHandle;
+    var dirHandle=_rootDirHandle;
+    // Skip index 0 (root folder name) — user chose the destination directory
     for(var i=1;i<parts.length-1;i++){
       dirHandle=await dirHandle.getDirectoryHandle(parts[i],{create:true});
     }
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
     ft.writer=await fileHandle.createWritable();
-    // Chunks buffered in ft.chunks — fe handler will write them all at once
   } catch(e){
-    console.warn('[RELAY] Folder stream writer unavailable:',e.message);
+    console.warn('[RELAY] openFolderFileWriter failed:',e.message);
     ft.writer=null;
   }
 }
