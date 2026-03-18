@@ -838,15 +838,28 @@ function ablyInitiate(remoteAblyId){
   var pc=makePC(pid); peers[pid].pc=pc;
   var dc=pc.createDataChannel('relay',{ordered:true}); attachDC(pid,dc);
 
-  // Give up if not connected within 20s
+  // Give up after 25s and try again — keepChat so we don't lose the session
   var connTimeout=setTimeout(function(){
     if(peers[pid]&&!peers[pid]._connected){
       console.warn('[RELAY] Connection timeout for',remoteAblyId);
       initiating.delete(remoteAblyId);
-      peerGone(pid,false);
+      try{ if(peers[pid]) peers[pid].pc.close(); }catch(e){}
+      delete peers[pid];
+      renderPeers(); updateStatus();
+      addLog('connection timed out — retrying…','warn');
       if(!anyConnected()) setStatus('waiting for peer…','wait');
+      // Retry — peer may still be in room
+      setTimeout(function(){
+        if(!alreadyConnectedTo(remoteAblyId) && !initiating.has(remoteAblyId)){
+          ablyChannel && ablyChannel.presence.get(function(err,members){
+            if(err||!members) return;
+            var still=members.some(function(m){ return m.clientId===remoteAblyId; });
+            if(still) ablyInitiate(remoteAblyId);
+          });
+        }
+      }, 1000);
     }
-  },20000);
+  },25000);
 
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
@@ -1093,23 +1106,54 @@ function makePC(pid){
       setStatus('connecting…','wait');
       addLog('establishing direct connection…','dim');
     } else if(s==='failed'){
-      // If DC is already open the connection is fine despite ICE reporting failure
       var p=peers[pid]; if(!p) return;
-      if(p.dc&&p.dc.readyState==='open') return;
-      console.warn('[RELAY] ICE failed for',pid,'— no TURN server available');
-      addLog('ICE failed for '+peerDisplayName(pid),'err');
-      toast(peerDisplayName(pid)+' could not connect (ICE failed)','er');
-      peerGone(pid,true);
-    } else if((s==='disconnected'||s==='closed')&&peers[pid]){
-      var p2=peers[pid]; if(!p2) return;
-      if(p2._connected){
-        addLog('connection to '+(p2.name||'peer')+' interrupted','warn');
-        addMsg('✕ '+p2.name+' left');
+      if(p.dc&&p.dc.readyState==='open') return; // DC open despite ICE report — fine
+      console.warn('[RELAY] ICE failed for',pid);
+      // Try ICE restart before giving up
+      if(!p._iceRestarted){
+        p._iceRestarted=true;
+        addLog('direct connection failed — trying relay…','warn');
+        pc.restartIce();
+      } else {
+        addLog('connection failed — no route to peer','err');
+        toast('Could not connect to peer','er');
+        peerGone(pid,true);
       }
+    } else if(s==='disconnected'&&peers[pid]){
+      // Disconnected is transient — browsers often recover within a few seconds.
+      // Wait before acting; if it recovers the state will move to connected/completed.
+      var p2=peers[pid]; if(!p2) return;
+      if(p2._connected) addLog('connection interrupted — waiting to recover…','warn');
+      clearTimeout(p2._discTimer);
+      p2._discTimer=setTimeout(function(){
+        // Still disconnected after 8s — treat as gone
+        if(peers[pid]&&pc.iceConnectionState==='disconnected'){
+          if(peers[pid]._connected){
+            addLog('connection to '+(peers[pid].name||'peer')+' lost','warn');
+            addMsg('✕ '+(peers[pid].name||'peer')+' left');
+          }
+          peerGone(pid,true);
+        }
+      },8000);
+    } else if(s==='closed'&&peers[pid]){
+      var p2=peers[pid]; if(!p2) return;
+      if(p2._connected) addMsg('✕ '+(p2.name||'peer')+' left');
       peerGone(pid,true);
     }
   };
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
+  pc.onnegotiationneeded=function(){
+    // Fired by restartIce() — send a fresh offer
+    if(!peers[pid]) return;
+    pc.createOffer()
+      .then(function(o){ return pc.setLocalDescription(o); })
+      .then(function(){ return gatherICE(pc); })
+      .then(function(desc){
+        var p=peers[pid]; if(!p) return;
+        ablySend(p.ablyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
+      })
+      .catch(function(e){ console.error('[RELAY] restartIce reoffer:',e); });
+  };
   return pc;
 }
 
