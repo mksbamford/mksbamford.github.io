@@ -600,38 +600,20 @@ function setStatus(t,c){
   document.getElementById('dot').className='dot'+(c?' '+c:'');
 }
 
-// ── CLI-style connection log ──────────────────────────────────────
-// All log lines go into a single #conn-log container appended once per
-// connection phase, so they never reorder relative to chat bubbles or file cards.
-var _connLogEl = null;
-function _getConnLog(){
-  var msgs=document.getElementById('msgs'); if(!msgs) return null;
-  // Always keep the log container at the very end of msgs
-  if(_connLogEl && _connLogEl.parentNode){
-    if(_connLogEl.parentNode===msgs && _connLogEl!==msgs.lastChild)
-      msgs.appendChild(_connLogEl); // move to end if something was appended after it
-    return _connLogEl;
-  }
-  _connLogEl=document.createElement('div');
-  _connLogEl.style.cssText='align-self:stretch;display:flex;flex-direction:column;padding:2px 0';
-  msgs.appendChild(_connLogEl);
-  return _connLogEl;
-}
+// ── Connection log ────────────────────────────────────────────────
+var _connLogEl = null; // unused — kept so call-sites of sealLogBlock don't break
 function addLog(text, level){
   if(document.getElementById('chat').style.display==='none') return;
-  var log=_getConnLog(); if(!log) return;
+  var msgs=document.getElementById('msgs'); if(!msgs) return;
   var ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   var cls=level==='ok'?'log-ok':level==='warn'?'log-warn':level==='err'?'log-err':level==='dim'?'log-dim':'';
   var line=document.createElement('div');
   line.className='log-line';
   line.innerHTML='<span class="log-t">'+ts+'</span><span class="'+(cls||'')+'">'+esc(text)+'</span>';
-  log.appendChild(line);
-  var msgs=document.getElementById('msgs'); if(msgs) msgs.scrollTop=msgs.scrollHeight;
+  msgs.appendChild(line);
+  msgs.scrollTop=msgs.scrollHeight;
 }
-function sealLogBlock(){
-  // Seal current log block so next addLog starts a fresh container after current messages
-  _connLogEl=null;
-}
+function sealLogBlock(){ /* no-op — log lines now appended directly to #msgs */ }
 
 // ── iOS visual viewport fix ───────────────────────────────────────
 (function(){
@@ -656,7 +638,7 @@ var _reconnectTimers = {};
 function scheduleReconnect(ablyId, name){
   if(_reconnectTimers[ablyId]) return; // already scheduled
   if(!ablyReady || !currentRoom) return;
-  addLog('lost connection to '+(name||ablyId)+' · will retry in 4s…', 'warn');
+  addLog('lost connection · will retry in 4s…', 'warn');
   _reconnectTimers[ablyId]=setTimeout(function(){
     delete _reconnectTimers[ablyId];
     if(!ablyReady||!currentRoom) return;
@@ -1081,14 +1063,16 @@ function kickPeer(pid){
 function peerGone(pid, keepChat){
   var p=peers[pid];
   var ablyId=p&&p.ablyId;
+  var wasConnected=p&&p._connected;
   var name=p&&p.name;
   delete peers[pid]; renderPeers(); updateStatus();
-  if(ablyId) scheduleReconnect(ablyId, name);
+  // Only schedule reconnect if this peer was previously fully connected
+  if(ablyId && wasConnected) scheduleReconnect(ablyId, name);
   if(!anyConnected()){
     if(keepChat){
       document.getElementById('ci').disabled=true;
-      addLog('all peers disconnected · waiting to reconnect…', 'warn');
-      addMsg('— disconnected — reconnecting if peer returns —');
+      // Use addMsg only — avoids log-container reordering race
+      addMsg('— disconnected · will reconnect if peer returns —','sys');
     } else {
       goIdle();
     }
@@ -1143,14 +1127,14 @@ function makePC(pid){
   };
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
   pc.onnegotiationneeded=function(){
-    // Fired by restartIce() — send a fresh offer
-    if(!peers[pid]) return;
-    pc.createOffer()
+    // Only act when an ICE restart was explicitly requested — ignore initial setup triggers
+    var p=peers[pid]; if(!p||!p._iceRestarted) return;
+    pc.createOffer({iceRestart:true})
       .then(function(o){ return pc.setLocalDescription(o); })
       .then(function(){ return gatherICE(pc); })
       .then(function(desc){
-        var p=peers[pid]; if(!p) return;
-        ablySend(p.ablyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
+        var p2=peers[pid]; if(!p2) return;
+        ablySend(p2.ablyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
       })
       .catch(function(e){ console.error('[RELAY] restartIce reoffer:',e); });
   };
@@ -1875,7 +1859,6 @@ function goIdle(){
   document.getElementById('bd').style.display='none';
   document.getElementById('conn-idle-hint').style.display='';
   document.getElementById('msgs').innerHTML='';
-  _connLogEl=null;
   document.getElementById('flist').innerHTML='<div class="empty">no files yet</div>';
   document.getElementById('sidebar').classList.remove('hidden','expanded');
   setStatus('idle'); fdata={}; transfers={}; pendingSend={}; initiating.clear(); folderBatches={}; pendingFolderFa={};
