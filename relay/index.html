@@ -387,14 +387,8 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
           <textarea class="inp" id="ci" placeholder="Message…" rows="1"
             onkeydown="ciKey(event)" oninput="ciResize(this)" disabled></textarea>
           <div id="ci-btns">
-            <div style="position:relative;flex:1">
-              <button class="btn" id="attach-btn" style="width:100%;background:transparent;border-color:#1e1e1e;font-size:13px"
-                onclick="toggleAttachMenu(event)" title="Attach">📎 Attach</button>
-              <div id="attach-menu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#111;border:1px solid #1e1e1e;border-radius:6px;overflow:hidden;white-space:nowrap;z-index:50;box-shadow:0 -4px 16px rgba(0,0,0,.6)">
-                <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFiles()">📄 Files</button>
-                <button class="btn" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:9px 14px;font-size:12px;background:transparent" onclick="ciPickFolder()">📁 Folder</button>
-              </div>
-            </div>
+            <button class="btn" style="flex:1" onclick="ciPickFiles()">📄 Files</button>
+            <button class="btn" style="flex:1" onclick="ciPickFolder()">📁 Folder</button>
             <button class="btn primary" style="flex:1" onclick="sendChat()">↑ Send</button>
           </div>
         </div>
@@ -586,7 +580,6 @@ function randomRoomId(){
   } else if(room){
     // Room in URL — go straight to chat view and log progress
     showChatUI();
-    addLog('joining room '+room.toUpperCase()+'…');
     joinAblyRoom(room.toUpperCase());
 
   } else {
@@ -725,12 +718,11 @@ function joinAblyRoom(roomId){
 
   ablyClient.connection.on('connecting', function(){
     if(!anyConnected()) setStatus('connecting…','wait');
-    addLog('connecting to relay…');
+    addLog('connecting… (room '+currentRoom+')');
   });
   ablyClient.connection.on('connected',function(){
     ablyReady=true;
     if(!anyConnected()) setStatus('ready','wait');
-    addLog('relay ready · entering room…');
     subscribeChannel(currentRoom);
   });
   ablyClient.connection.on('disconnected',function(){
@@ -929,7 +921,6 @@ function startRequestFile(){
   updateRoomUI();
   document.getElementById('bd').style.display='';
   showChatUI();
-  addLog('request-a-file session · room '+room+'…');
   // Show share card with the ?req= link so recipient sends automatically
   var reqLink=PAGE_URL+'?req='+room;
   showInlineShareCard(room, reqLink);
@@ -1004,16 +995,8 @@ function ciKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendCha
 function ciResize(el){ el.style.height=''; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
 function ciFilePick(e){ sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
 function ciFolderPick(e){ resetDirCache(); sendFiles(Array.from(e.target.files), targetPid()); e.target.value=''; }
-function ciPickFiles(){ closeAttachMenu(); document.getElementById('ci-file').click(); }
-function ciPickFolder(){ closeAttachMenu(); document.getElementById('ci-folder').click(); }
-function toggleAttachMenu(e){
-  e.stopPropagation();
-  var m=document.getElementById('attach-menu');
-  var open=m.style.display!=='none';
-  m.style.display=open?'none':'block';
-  if(!open) setTimeout(function(){ document.addEventListener('click',closeAttachMenu,{once:true}); },0);
-}
-function closeAttachMenu(){ document.getElementById('attach-menu').style.display='none'; }
+function ciPickFiles(){ document.getElementById('ci-file').click(); }
+function ciPickFolder(){ document.getElementById('ci-folder').click(); }
 function targetPid(){ var v=document.getElementById('peer-target').value; return (v&&v!=='all')?v:null; }
 
 // ── Peer list UI ──────────────────────────────────────────────────
@@ -1879,7 +1862,6 @@ function startHost(){
   document.getElementById('page-url-el').textContent=PAGE_URL;
   document.getElementById('bd').style.display='';
   showChatUI();
-  addLog('creating session · room '+currentRoom+'…');
   showInlineShareCard(currentRoom);
 }
 
