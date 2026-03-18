@@ -492,16 +492,19 @@ myName = myName.slice(0,32);
 function myDisplayName(){ return myName||('anon#'+myUid); }
 function peerDisplayName(pid){
   var p=peers[pid]; if(!p) return '?';
-  // Show #uid suffix if any other connected peer has the same name
+  var base=p.name||(p.uid||'?');
+  // Show #uid if another connected peer OR ourselves shares the same name
   var clash=Object.values(peers).some(function(q){
     return q!==p && q._connected && q.name && q.name===p.name;
-  });
-  var base=p.name||(p.uid||'?');
-  return base+(clash&&p.uid&&p.name?'#'+p.uid:'');
+  }) || (p.name && myName && p.name===myName);
+  return base+(clash&&p.uid?'#'+p.uid:'');
 }
 function updateNameChip(){
   var el=document.getElementById('my-name-el'); if(!el) return;
-  el.textContent=myName||'set name';
+  var clash=myName && Object.values(peers).some(function(p){
+    return p._connected && p.name && p.name===myName;
+  });
+  el.textContent=(myName||'set name')+(clash?'#'+myUid:'');
 }
 function openNameEdit(){
   document.getElementById('name-inp').value=myName;
@@ -1095,7 +1098,7 @@ function peerGone(pid, keepChat){
   var ablyId=p&&p.ablyId;
   var wasConnected=p&&p._connected;
   var name=p&&p.name;
-  delete peers[pid]; renderPeers(); updateStatus();
+  delete peers[pid]; renderPeers(); updateStatus(); updateNameChip();
   // Only schedule reconnect if this peer was previously fully connected
   if(ablyId && wasConnected) scheduleReconnect(ablyId, name);
   if(!anyConnected()){
@@ -1181,9 +1184,12 @@ function attachDC(pid,ch){
     if(pump){ delete peers[pid]._pump; pump(); }
   };
   ch.onopen=function(){
-    // Introduce ourselves immediately
+    // Send our identity — finishConnect is deferred until we receive their hi
     ch.send(JSON.stringify({t:'hi',name:myName,uid:myUid}));
-    if(peers[pid]&&!peers[pid]._connected){ peers[pid]._connected=true; finishConnect(pid); }
+    // Safety fallback: if hi never arrives (old client), connect after 2s anyway
+    if(peers[pid]) peers[pid]._hiTimer=setTimeout(function(){
+      if(peers[pid]&&!peers[pid]._connected){ peers[pid]._connected=true; finishConnect(pid); }
+    }, 2000);
   };
 }
 
@@ -1199,7 +1205,7 @@ function finishConnect(pid){
   introNewPeerMesh(pid);
   if(document.getElementById('splash').style.display!=='none') showChatUI();
   document.getElementById('ci').disabled=false;
-  renderPeers(); updateStatus();
+  renderPeers(); updateStatus(); updateNameChip();
   var dn=peerDisplayName(pid);
   addLog('connected to '+dn,'ok');
   showBanner('⚡ '+dn+' joined');
@@ -1229,14 +1235,13 @@ function onText(pid,raw){
   var m; try{ m=JSON.parse(raw); }catch(e){ addMsg(raw,'them',p?peerDisplayName(pid):null); return; }
 
   if(m.t==='hi'){
-    // Peer introducing themselves
-    if(p){ p.name=m.name||''; p.uid=m.uid||''; }
-    renderPeers(); updateStatus();
-    // Update the join banner/message now we have the real name
-    var dn=peerDisplayName(pid);
-    var joins=document.querySelectorAll('.msg.sys');
-    joins.forEach(function(el){ if(el.textContent==='⚡ Peer '+peerCount+' joined') el.textContent='⚡ '+dn+' joined'; });
-    return; // hi is silent — no chat bubble
+    if(p){
+      p.name=m.name||''; p.uid=m.uid||'';
+      clearTimeout(p._hiTimer);
+      if(!p._connected){ p._connected=true; finishConnect(pid); }
+      else { renderPeers(); } // already connected via fallback — just refresh display
+    }
+    return;
 
   } else if(m.t==='rename'){
     if(!p) return;
