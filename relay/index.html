@@ -484,7 +484,9 @@ var ablyReady   = false;
 var myUid = (function(){
   var k='relay_uid', c='abcdefghjkmnpqrstuvwxyz23456789', v=localStorage.getItem(k);
   if(!v){ v=''; for(var i=0;i<4;i++) v+=c[Math.floor(Math.random()*c.length)]; localStorage.setItem(k,v); }
-  return v;
+  // Append a 2-char session tag so two tabs from the same device get distinct uids
+  var s=''; for(var i=0;i<2;i++) s+=c[Math.floor(Math.random()*c.length)];
+  return v+s;
 })();
 var myName = localStorage.getItem('relay_name')||'';
 myName = myName.slice(0,32);
@@ -1117,8 +1119,9 @@ function makePC(pid){
   var pc=new RTCPeerConnection(ICE);
   pc.oniceconnectionstatechange=function(){
     var s=pc.iceConnectionState;
-    if((s==='connected'||s==='completed')&&peers[pid]&&!peers[pid]._connected){
-      peers[pid]._connected=true; finishConnect(pid);
+    if((s==='connected'||s==='completed')&&peers[pid]){
+      // ICE path is open — DC onopen will trigger finishConnect via hi exchange
+      // Nothing to do here; just suppress the fallthrough to other states
     } else if(s==='checking'&&!anyConnected()){
       setStatus('connecting…','wait');
       addLog('establishing direct connection…','dim');
@@ -1137,10 +1140,11 @@ function makePC(pid){
         peerGone(pid,true);
       }
     } else if(s==='disconnected'&&peers[pid]){
-      // Disconnected is transient — browsers often recover within a few seconds.
-      // Wait before acting; if it recovers the state will move to connected/completed.
       var p2=peers[pid]; if(!p2) return;
-      if(p2._connected) addLog('connection interrupted — waiting to recover…','warn');
+      // Only act if DC was actually open — ignore transient disconnected during ICE setup
+      var dcOpen=p2.dc&&p2.dc.readyState==='open';
+      if(!dcOpen) return;
+      addLog('connection interrupted — waiting to recover…','warn');
       clearTimeout(p2._discTimer);
       p2._discTimer=setTimeout(function(){
         // Still disconnected after 8s — treat as gone
