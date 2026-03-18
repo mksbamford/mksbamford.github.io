@@ -457,7 +457,7 @@ body.req-mode #quick-drop .qd-sub{color:#00ff88;font-weight:600}
 // After deploying relay-worker, set this to your worker URL:
 var AUTH_URL = 'https://snowy-feather-5c8c.markksbamford.workers.dev/token';
 
-var CHUNK    = 64 * 1024;   // 64KB — good balance for real networks
+var CHUNK    = 256 * 1024;  // 256KB — better throughput for LAN/fast connections
 var BUF_HIGH = 4 * 1024 * 1024;  // 4MB send buffer before pausing
 var BUF_LOW  = 1 * 1024 * 1024;  // 1MB resume threshold
 
@@ -1183,8 +1183,8 @@ function attachDC(pid,ch){
     if(typeof e.data==='string') onText(pid,e.data); else onBin(pid,e.data);
   };
   ch.onbufferedamountlow=function(){
-    var pump=peers[pid]&&peers[pid]._pump;
-    if(pump){ delete peers[pid]._pump; pump(); }
+    var pumps=peers[pid]&&peers[pid]._pumps;
+    if(pumps&&pumps.size){ var arr=Array.from(pumps); pumps.clear(); arr.forEach(function(fn){ fn(); }); }
   };
   ch.onopen=function(){
     // Send our identity — finishConnect is deferred until we receive their hi
@@ -1335,7 +1335,9 @@ function onText(pid,raw){
       }
 
       if(ft2.writer){
-        ft2.writer.close().then(function(){
+        (ft2._writeChain||Promise.resolve()).then(function(){
+          return ft2.writer.close();
+        }).then(function(){
           onFileComplete(true);
         }).catch(function(e){ toast('Save error: '+e.message,'er'); });
       } else if(feFid && folderBatches[feFid]){
@@ -1427,8 +1429,10 @@ function onBin(pid,buf){
   var chunk=buf.slice(36);
   ft.got+=chunk.byteLength;
   if(ft.writer){
-    // Streaming — write directly to disk, don't accumulate in RAM
-    ft.writer.write(new Uint8Array(chunk));
+    // Chain writes so they don't pile up unboundedly
+    ft._writeChain=(ft._writeChain||Promise.resolve()).then(function(){
+      return ft.writer.write(new Uint8Array(chunk));
+    }).catch(function(e){ console.warn('[RELAY] write error:',e); });
   } else {
     ft.chunks.push(chunk);
   }
@@ -1600,6 +1604,11 @@ function respondFile(ftid,pid,accept){
 // by concurrent pump loops fighting over bufferedAmount
 function enqueueSend(pid, ftid, file, fid){
   var p=peers[pid]; if(!p) return;
+  if(fid){
+    // Folder files start concurrently — each pump registers in _pumps Set, not a single slot
+    startSendingFile(ftid, file, pid, fid, null);
+    return;
+  }
   if(!p._sendQueue) p._sendQueue=[];
   p._sendQueue.push({ftid:ftid,file:file,fid:fid});
   if(!p._sending) drainSendQueue(pid);
@@ -1645,8 +1654,12 @@ function startSendingFile(ftid,file,pid,fid,onDone){
       return;
     }
 
-    // Backpressured — wait for bufferedamountlow event
-    if(p.dc.bufferedAmount>=BUF_HIGH){ peers[pid]._pump=pump; return; }
+    // Backpressured — register in pumps set and wait for bufferedamountlow
+    if(p.dc.bufferedAmount>=BUF_HIGH){
+      if(!peers[pid]._pumps) peers[pid]._pumps=new Set();
+      peers[pid]._pumps.add(pump);
+      return;
+    }
 
     // Read next chunk then immediately loop — no setTimeout yield
     file.slice(offset,offset+CHUNK).arrayBuffer().then(function(ab){
@@ -1712,7 +1725,12 @@ async function openFolderStreamWriter(ftid, path, mime){
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
     ft.writer=await fileHandle.createWritable();
     if(ft.chunks&&ft.chunks.length){
-      for(var ci=0;ci<ft.chunks.length;ci++) await ft.writer.write(new Uint8Array(ft.chunks[ci]));
+      // Flush chunks that arrived while picker was open, chaining onto write promise
+      var chain=Promise.resolve();
+      for(var ci=0;ci<ft.chunks.length;ci++){
+        (function(c){ chain=chain.then(function(){ return ft.writer.write(new Uint8Array(c)); }); })(ft.chunks[ci]);
+      }
+      ft._writeChain=chain;
       ft.chunks=[];
     }
   } catch(e){
