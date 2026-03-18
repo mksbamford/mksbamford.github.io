@@ -903,12 +903,13 @@ function onAblySignal(d){
       })
       .then(function(a){ return pc.setLocalDescription(a); })
       .then(function(){
-        ablySend(d.from,{type:'answer',sdp:sdpObj(pc.localDescription),forPid:pid});
+        ablySend(d.from,{type:'answer',sdp:sdpObj(pc.localDescription)});
       })
       .catch(function(e){ console.error('[RELAY] ablyAnswer:',e); delete peers[pid]; });
 
   } else if(d.type==='answer'){
-    var pid2=d.forPid||ablyPidForId(d.from);
+    // forPid is the answerer's local pid — meaningless here. Always look up by sender's ablyId.
+    var pid2=ablyPidForId(d.from);
     if(!pid2||!peers[pid2]) return;
     peers[pid2].ablyId=d.from;
     peers[pid2].pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
