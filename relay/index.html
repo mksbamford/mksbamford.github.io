@@ -835,11 +835,14 @@ function ablyInitiate(remoteAblyId){
     }
   },25000);
 
+  // Trickle ICE: send offer immediately, then send candidates as they arrive
+  pc.onicecandidate=function(e){
+    if(e.candidate) ablySend(remoteAblyId,{type:'candidate',candidate:e.candidate,fromPid:pid});
+  };
   pc.createOffer()
     .then(function(o){ return pc.setLocalDescription(o); })
-    .then(function(){ return gatherICE(pc); })
-    .then(function(desc){
-      ablySend(remoteAblyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
+    .then(function(){
+      ablySend(remoteAblyId,{type:'offer',sdp:sdpObj(pc.localDescription),fromPid:pid});
     })
     .catch(function(e){
       console.error('[RELAY] ablyInitiate:',e);
@@ -870,17 +873,26 @@ function onAblySignal(d){
       delete peers[existingPid];
     }
 
-    // Accept offer and send answer
+    // Accept offer and send answer — trickle ICE
     var pid=mkId(); peerCount++;
     peers[pid]={pc:null,dc:null,name:'',uid:'',_connected:false,ablyId:d.from};
     var pc=makePC(pid); peers[pid].pc=pc;
     addLog('peer found · answering…');
+    pc.onicecandidate=function(e){
+      if(e.candidate) ablySend(d.from,{type:'candidate',candidate:e.candidate,forPid:pid});
+    };
     pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
-      .then(function(){ return pc.createAnswer(); })
+      .then(function(){
+        // Drain any candidates that arrived before remote description was set
+        (peers[pid]._pendingCandidates||[]).forEach(function(c){
+          pc.addIceCandidate(new RTCIceCandidate(c)).catch(function(){});
+        });
+        delete peers[pid]._pendingCandidates;
+        return pc.createAnswer();
+      })
       .then(function(a){ return pc.setLocalDescription(a); })
-      .then(function(){ return gatherICE(pc); })
-      .then(function(desc){
-        ablySend(d.from,{type:'answer',sdp:sdpObj(desc),forPid:pid});
+      .then(function(){
+        ablySend(d.from,{type:'answer',sdp:sdpObj(pc.localDescription),forPid:pid});
       })
       .catch(function(e){ console.error('[RELAY] ablyAnswer:',e); delete peers[pid]; });
 
@@ -889,7 +901,26 @@ function onAblySignal(d){
     if(!pid2||!peers[pid2]) return;
     peers[pid2].ablyId=d.from;
     peers[pid2].pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
+      .then(function(){
+        (peers[pid2]._pendingCandidates||[]).forEach(function(c){
+          peers[pid2].pc.addIceCandidate(new RTCIceCandidate(c)).catch(function(){});
+        });
+        delete peers[pid2]._pendingCandidates;
+      })
       .catch(function(e){ console.error('[RELAY] ablyApplyAnswer:',e); });
+
+  } else if(d.type==='candidate'){
+    var pid3=d.forPid||ablyPidForId(d.from);
+    if(!pid3||!peers[pid3]||!peers[pid3].pc) return;
+    var pc3=peers[pid3].pc;
+    // Queue candidates if remote description not yet applied
+    if(!pc3.remoteDescription||!pc3.remoteDescription.type){
+      if(!peers[pid3]._pendingCandidates) peers[pid3]._pendingCandidates=[];
+      peers[pid3]._pendingCandidates.push(d.candidate);
+    } else {
+      pc3.addIceCandidate(new RTCIceCandidate(d.candidate))
+        .catch(function(e){ console.warn('[RELAY] addIceCandidate:',e.message); });
+    }
   }
 }
 
@@ -1110,14 +1141,12 @@ function makePC(pid){
   };
   pc.ondatachannel=function(e){ attachDC(pid,e.channel); };
   pc.onnegotiationneeded=function(){
-    // Only act when an ICE restart was explicitly requested — ignore initial setup triggers
     var p=peers[pid]; if(!p||!p._iceRestarted) return;
     pc.createOffer({iceRestart:true})
       .then(function(o){ return pc.setLocalDescription(o); })
-      .then(function(){ return gatherICE(pc); })
-      .then(function(desc){
+      .then(function(){
         var p2=peers[pid]; if(!p2) return;
-        ablySend(p2.ablyId,{type:'offer',sdp:sdpObj(desc),fromPid:pid});
+        ablySend(p2.ablyId,{type:'offer',sdp:sdpObj(pc.localDescription),fromPid:pid});
       })
       .catch(function(e){ console.error('[RELAY] restartIce reoffer:',e); });
   };
@@ -1142,16 +1171,7 @@ function attachDC(pid,ch){
   };
 }
 
-function gatherICE(pc){
-  return new Promise(function(resolve){
-    if(pc.iceGatheringState==='complete'){ resolve(pc.localDescription); return; }
-    var done=false;
-    function fin(){ if(done)return; done=true; resolve(pc.localDescription); }
-    pc.addEventListener('icecandidate',function(e){ if(e.candidate===null) fin(); });
-    pc.addEventListener('icegatheringstatechange',function(){ if(pc.iceGatheringState==='complete') fin(); });
-    setTimeout(fin,2500);
-  });
-}
+
 function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
 
 function finishConnect(pid){
