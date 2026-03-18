@@ -1335,9 +1335,12 @@ function onText(pid,raw){
       }
 
       if(ft2.writer){
-        (ft2._writeChain||Promise.resolve()).then(function(){
-          return ft2.writer.close();
-        }).then(function(){
+        // Write all buffered chunks sequentially then close
+        var writeAll=ft2.chunks.reduce(function(chain,c){
+          return chain.then(function(){ return ft2.writer.write(new Uint8Array(c)); });
+        }, Promise.resolve());
+        writeAll.then(function(){ return ft2.writer.close(); })
+        .then(function(){
           onFileComplete(true);
         }).catch(function(e){ toast('Save error: '+e.message,'er'); });
       } else if(feFid && folderBatches[feFid]){
@@ -1428,14 +1431,8 @@ function onBin(pid,buf){
   var ft=transfers[ftid]; if(!ft) return;
   var chunk=buf.slice(36);
   ft.got+=chunk.byteLength;
-  if(ft.writer){
-    // Chain writes so they don't pile up unboundedly
-    ft._writeChain=(ft._writeChain||Promise.resolve()).then(function(){
-      return ft.writer.write(new Uint8Array(chunk));
-    }).catch(function(e){ console.warn('[RELAY] write error:',e); });
-  } else {
-    ft.chunks.push(chunk);
-  }
+  // Always buffer chunks — writer is applied in bulk when fe arrives (avoids race)
+  ft.chunks.push(chunk);
   var pct=Math.round(ft.got/ft.size*100);
   if(fdata[ftid]){ fdata[ftid].pct=pct; fdata[ftid].dir='↓ receiving'; }
   var bar=document.getElementById('fb-'+ftid); if(bar) bar.style.width=pct+'%';
@@ -1725,15 +1722,7 @@ async function openFolderStreamWriter(ftid, path, mime){
     }
     var fileHandle=await dirHandle.getFileHandle(fileName,{create:true});
     ft.writer=await fileHandle.createWritable();
-    if(ft.chunks&&ft.chunks.length){
-      // Flush chunks that arrived while picker was open, chaining onto write promise
-      var chain=Promise.resolve();
-      for(var ci=0;ci<ft.chunks.length;ci++){
-        (function(c){ chain=chain.then(function(){ return ft.writer.write(new Uint8Array(c)); }); })(ft.chunks[ci]);
-      }
-      ft._writeChain=chain;
-      ft.chunks=[];
-    }
+    // Chunks buffered in ft.chunks — fe handler will write them all at once
   } catch(e){
     console.warn('[RELAY] Folder stream writer unavailable:',e.message);
     ft.writer=null;
