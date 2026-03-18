@@ -748,20 +748,20 @@ function joinAblyRoom(roomId){
   ablyClient.connection.on('connected',function(){
     ablyReady=true;
     if(!anyConnected()) setStatus('ready','wait');
-    addLog('relay connected','ok');
+    addLog('relay ready · entering room…');
     subscribeChannel(currentRoom);
   });
   ablyClient.connection.on('disconnected',function(){
     if(!anyConnected()) setStatus('reconnecting…','wait');
-    addLog('relay disconnected — retrying…','warn');
+    addLog('connection lost — retrying…','warn');
   });
   ablyClient.connection.on('suspended',function(){
     if(!anyConnected()) setStatus('offline','err');
-    addLog('relay offline — check network','err');
+    addLog('offline — check network','err');
   });
   ablyClient.connection.on('failed',function(){
     setStatus('failed','err');
-    addLog('relay connection failed','err');
+    addLog('connection failed','err');
     toast('Could not connect — check your network','er');
   });
 }
@@ -775,13 +775,21 @@ function subscribeChannel(roomId){
 
   ablyChannel=ablyClient.channels.get('relay:'+roomId);
 
-  // Presence: when someone enters the channel, we initiate a WebRTC connection to them
+  // Presence: peer enters room.
+  // Only the peer with the LOWER clientId initiates — eliminates glare entirely.
+  // The higher ID peer waits to receive an offer.
   ablyChannel.presence.subscribe('enter',function(member){
     var remoteId=member.clientId;
     if(remoteId===myAblyId) return;
-    if(alreadyConnectedTo(remoteId)) return; // already have a live DC to this peer
-    // Small random backoff (0–400ms) so both sides don't send offers simultaneously
-    if(myAblyId < remoteId) setTimeout(function(){ ablyInitiate(remoteId); }, Math.random()*400);
+    if(alreadyConnectedTo(remoteId)) return;
+    if(initiating.has(remoteId)) return;
+    if(myAblyId < remoteId){
+      // We initiate
+      setTimeout(function(){
+        if(!alreadyConnectedTo(remoteId) && !initiating.has(remoteId)) ablyInitiate(remoteId);
+      }, 100 + Math.random()*200);
+    }
+    // Higher ID: wait — the lower ID peer will send us an offer
   });
 
   // Receive signals addressed to us
@@ -796,22 +804,25 @@ function subscribeChannel(roomId){
     console.warn('[RELAY] presence.enter failed:',e.message);
   });
 
-  // Get existing members and initiate to each one we should connect to
-  // Use a longer delay here so the 'enter' subscription fires first and deduplicates
-  setTimeout(function(){
+  // Check for peers already in the room. Run twice to handle Ably propagation delays:
+  // once at 1s (fast path) and once at 4s (catches slow presence propagation).
+  function pollPresence(){
     ablyChannel.presence.get(function(err,members){
       if(err||!members) return;
       members.forEach(function(member){
         var remoteId=member.clientId;
         if(remoteId===myAblyId) return;
         if(alreadyConnectedTo(remoteId)) return;
+        if(initiating.has(remoteId)) return;
         if(myAblyId < remoteId) ablyInitiate(remoteId);
       });
     });
-  }, 600);
+  }
+  setTimeout(pollPresence, 1000);
+  setTimeout(pollPresence, 4000);
 
   updateRoomUI();
-  if(!anyConnected()){ setStatus('waiting for peer…','wait'); addLog('joined room '+roomId+' · waiting for peer…'); }
+  if(!anyConnected()){ setStatus('waiting for peer…','wait'); addLog('waiting for peer…'); }
 }
 
 // We send an SDP offer to remoteAblyId via Ably
@@ -820,7 +831,7 @@ var initiating = new Set(); // guard against duplicate ablyInitiate for same rem
 function ablyInitiate(remoteAblyId){
   if(initiating.has(remoteAblyId)) return; // already in progress
   initiating.add(remoteAblyId);
-  addLog('peer found · initiating connection…');
+  addLog('peer found · establishing connection…');
 
   var pid=mkId(); peerCount++;
   peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:remoteAblyId};
@@ -862,21 +873,31 @@ function ablySend(toAblyId, payload){
 
 function onAblySignal(d){
   if(d.type==='offer'){
-    // Someone is offering — we answer
+    // With one-side-initiates (lower ID initiates), we should only receive offers
+    // from peers with a lower ID than ours. Ignore duplicate offers from already-connected peers.
+    var existingPid=ablyPidForId(d.from);
+    if(existingPid && peers[existingPid]){
+      if(peers[existingPid]._connected) return; // already connected — ignore
+      // Re-entrant offer during connection attempt: replace old PC
+      try{ peers[existingPid].pc.close(); }catch(e){}
+      delete peers[existingPid];
+    }
+
+    // Accept offer and send answer
     var pid=mkId(); peerCount++;
-    peers[pid]={pc:null,dc:null,name:'Peer '+peerCount,_connected:false,ablyId:d.from};
+    peers[pid]={pc:null,dc:null,name:'',uid:'',_connected:false,ablyId:d.from};
     var pc=makePC(pid); peers[pid].pc=pc;
+    addLog('peer found · answering…');
     pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
       .then(function(){ return pc.createAnswer(); })
       .then(function(a){ return pc.setLocalDescription(a); })
       .then(function(){ return gatherICE(pc); })
       .then(function(desc){
-        ablySend(d.from,{type:'answer',sdp:sdpObj(desc),forPid:d.fromPid});
+        ablySend(d.from,{type:'answer',sdp:sdpObj(desc),forPid:pid});
       })
       .catch(function(e){ console.error('[RELAY] ablyAnswer:',e); delete peers[pid]; });
 
   } else if(d.type==='answer'){
-    // Our offer was answered — apply the answer
     var pid2=d.forPid||ablyPidForId(d.from);
     if(!pid2||!peers[pid2]) return;
     peers[pid2].ablyId=d.from;
@@ -1070,7 +1091,7 @@ function makePC(pid){
       peers[pid]._connected=true; finishConnect(pid);
     } else if(s==='checking'&&!anyConnected()){
       setStatus('connecting…','wait');
-      addLog('ICE checking…','dim');
+      addLog('establishing direct connection…','dim');
     } else if(s==='failed'){
       // If DC is already open the connection is fine despite ICE reporting failure
       var p=peers[pid]; if(!p) return;
@@ -1117,7 +1138,7 @@ function gatherICE(pc){
     function fin(){ if(done)return; done=true; resolve(pc.localDescription); }
     pc.addEventListener('icecandidate',function(e){ if(e.candidate===null) fin(); });
     pc.addEventListener('icegatheringstatechange',function(){ if(pc.iceGatheringState==='complete') fin(); });
-    setTimeout(fin,6000);
+    setTimeout(fin,2500);
   });
 }
 function sdpObj(d){ return {type:d.type,sdp:d.sdp}; }
