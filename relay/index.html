@@ -1604,14 +1604,15 @@ function respondFile(ftid,pid,accept){
 // by concurrent pump loops fighting over bufferedAmount
 function enqueueSend(pid, ftid, file, fid){
   var p=peers[pid]; if(!p) return;
-  if(fid){
-    // Folder files start concurrently — each pump registers in _pumps Set, not a single slot
-    startSendingFile(ftid, file, pid, fid, null);
-    return;
-  }
   if(!p._sendQueue) p._sendQueue=[];
   p._sendQueue.push({ftid:ftid,file:file,fid:fid});
   if(!p._sending) drainSendQueue(pid);
+}
+function drainSendQueue(pid){
+  var p=peers[pid]; if(!p||!p._sendQueue||!p._sendQueue.length){ if(p) p._sending=false; return; }
+  p._sending=true;
+  var item=p._sendQueue.shift();
+  startSendingFile(item.ftid, item.file, pid, item.fid, function(){ drainSendQueue(pid); });
 }
 function drainSendQueue(pid){
   var p=peers[pid]; if(!p||!p._sendQueue||!p._sendQueue.length){ if(p) p._sending=false; return; }
